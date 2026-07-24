@@ -71,7 +71,6 @@ class ResourcesScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Icon(Icons.chevron_right),
                     ],
                   ),
                   const SizedBox(height: 8),

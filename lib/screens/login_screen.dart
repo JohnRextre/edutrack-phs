@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/account_role.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -11,6 +13,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _schoolIdController = TextEditingController();
   final _passwordController = TextEditingController();
+  AccountRole _selectedRole = AccountRole.student;
   bool _obscurePassword = true;
 
   @override
@@ -22,7 +25,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _login() {
     if (_formKey.currentState!.validate()) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      Navigator.pushReplacementNamed(
+        context,
+        '/dashboard',
+        arguments: _selectedRole.name,
+      );
     }
   }
 
@@ -33,52 +40,84 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 40),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: 520),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    CircleAvatar(
-                      radius: 34,
-                      backgroundColor: colors.primaryContainer,
-                      child: Icon(
-                        Icons.menu_book_rounded,
-                        size: 34,
-                        color: colors.primary,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sign in',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                        TextButton(
+                          onPressed: () {},
+                          child: const Text('Back to Portal'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    _FieldLabel('Select Campus:'),
+                    DropdownButtonFormField<String>(
+                      initialValue: 'NU Baliwag',
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.account_balance_outlined),
                       ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'NU Baliwag',
+                          child: Text('NU Baliwag'),
+                        ),
+                      ],
+                      onChanged: (_) {},
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'EduTrack PHS',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Your school resources, all in one place.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.onSurfaceVariant,
+                    const SizedBox(height: 18),
+                    _FieldLabel('Select Account Type:'),
+                    DropdownButtonFormField<AccountRole>(
+                      initialValue: _selectedRole,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.person_outline),
                       ),
+                      items: AccountRole.values
+                          .map(
+                            (role) => DropdownMenuItem(
+                              value: role,
+                              child: Text(
+                                role == AccountRole.ictCoordinator
+                                    ? 'Admin (ICT Coordinator)'
+                                    : role.label,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (role) {
+                        if (role != null) setState(() => _selectedRole = role);
+                      },
                     ),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 18),
                     TextFormField(
                       controller: _schoolIdController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'School ID or Email',
+                        labelText: 'School ID / Email',
                         prefixIcon: Icon(Icons.badge_outlined),
                       ),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
-                          ? 'Enter your school ID or email'
+                          ? 'Enter your School ID or Email'
                           : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -100,11 +139,50 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? 'Enter your password'
                           : null,
                     ),
-                    const SizedBox(height: 28),
-                    FilledButton.icon(
-                      onPressed: _login,
-                      icon: const Icon(Icons.login),
-                      label: const Text('Log in'),
+                    const SizedBox(height: 18),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info, size: 19, color: colors.secondary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'If you are a student or an employee, login with your EduTrack account.',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      height: 50,
+                      child: FilledButton(
+                        onPressed: _login,
+                        child: const Text('Login with EduTrack'),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () {},
+                          child: const Text('Create an account'),
+                        ),
+                        TextButton(
+                          onPressed: () {},
+                          child: const Text('Forgot password'),
+                        ),
+                      ],
+                    ),
+                    Center(
+                      child: TextButton(
+                        onPressed: () {},
+                        child: const Text('Need help?'),
+                      ),
                     ),
                   ],
                 ),
@@ -115,4 +193,21 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  );
 }

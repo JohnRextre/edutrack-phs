@@ -1,170 +1,179 @@
 import 'package:flutter/material.dart';
 
-class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+import '../models/account_role.dart';
+import '../widgets/admin_sidebar.dart';
+import '../widgets/custodian_sidebar.dart';
+import 'admin_dashboard_screen.dart';
+import 'borrower_dashboard_screen.dart';
+import 'custodian_dashboard_screen.dart';
+
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key, required this.role});
+
+  final AccountRole role;
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  late AccountRole _selectedRole = widget.role;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final isBorrower = _selectedRole.isBorrower;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
         actions: [
+          PopupMenuButton<AccountRole>(
+            tooltip: 'Switch dashboard role',
+            initialValue: _selectedRole,
+            onSelected: (role) => setState(() => _selectedRole = role),
+            icon: const Icon(Icons.swap_horiz),
+            itemBuilder: (context) => AccountRole.values
+                .map(
+                  (role) => PopupMenuItem(value: role, child: Text(role.label)),
+                )
+                .toList(),
+          ),
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.notifications_none),
           ),
+          if (isBorrower)
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: () => _signOut(context),
+              icon: const Icon(Icons.logout),
+            ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        children: [
-          Text(
-            'Welcome, John Rexter',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Here is your resource activity at a glance.',
-            style: TextStyle(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 24),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.35,
-            children: const [
-              _StatCard(
-                label: 'Active Borrowings',
-                value: '2',
-                icon: Icons.inventory_2_outlined,
-              ),
-              _StatCard(
-                label: 'Pending Requests',
-                value: '1',
-                icon: Icons.pending_actions_outlined,
-              ),
-              _StatCard(
-                label: 'Pending Returns',
-                value: '0',
-                icon: Icons.assignment_turned_in_outlined,
-              ),
-              _StatCard(
-                label: 'Overdue Item',
-                value: '1',
-                icon: Icons.warning_amber_outlined,
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Text(
-            'Quick actions',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.search,
-                  label: 'Browse resources',
-                  onPressed: () => Navigator.pushNamed(context, '/resources'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.assignment_return_outlined,
-                  label: 'Return an item',
-                  onPressed: () => Navigator.pushNamed(context, '/return'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        onDestinationSelected: (index) {
-          if (index == 1) Navigator.pushNamed(context, '/resources');
-          if (index == 2) Navigator.pushNamed(context, '/return');
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Resources'),
-          NavigationDestination(
-            icon: Icon(Icons.assignment_return_outlined),
-            label: 'Returns',
-          ),
-        ],
-      ),
+      drawer: isBorrower
+          ? null
+          : Drawer(
+              child: _sidebarForRole(context, _selectedRole, mobile: true),
+            ),
+      body: isBorrower
+          ? BorrowerDashboardScreen(
+              role: _selectedRole,
+              onSignOut: () => _signOut(context),
+            )
+          : _ManagementShell(
+              role: _selectedRole,
+              onSignOut: () => _signOut(context),
+            ),
+      bottomNavigationBar: isBorrower ? const _BorrowerNavigationBar() : null,
     );
+  }
+
+  Widget _sidebarForRole(
+    BuildContext context,
+    AccountRole role, {
+    required bool mobile,
+  }) {
+    void navigate(String label) {
+      if (mobile) Navigator.pop(context);
+      final route = switch (label) {
+        'Learning Resources' => '/custodian-resources',
+        'Borrow Requests' => '/custodian-borrow-requests',
+        'Return Verification' => '/custodian-return-verification',
+        'Reports' =>
+          role == AccountRole.propertyCustodian
+              ? '/custodian-reports'
+              : '/admin-dashboard',
+        'User Management' => '/admin-users',
+        'System Logs' => '/admin-logs',
+        _ => null,
+      };
+      if (route != null) Navigator.pushNamed(context, route);
+    }
+
+    if (role == AccountRole.propertyCustodian) {
+      return CustodianSidebar(
+        onNavigate: navigate,
+        onSignOut: () => _signOut(context),
+      );
+    }
+    return AdminSidebar(
+      onNavigate: navigate,
+      onSignOut: () => _signOut(context),
+    );
+  }
+
+  void _signOut(BuildContext context) {
+    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-  final String label;
-  final String value;
-  final IconData icon;
+class _ManagementShell extends StatelessWidget {
+  const _ManagementShell({required this.role, required this.onSignOut});
+  final AccountRole role;
+  final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final content = role == AccountRole.propertyCustodian
+        ? const CustodianDashboardScreen()
+        : const AdminDashboardScreen();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 760) return content;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(icon, color: colors.primary),
-            Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            Text(label, style: Theme.of(context).textTheme.labelLarge),
+            SizedBox(width: 240, child: _desktopSidebar(context)),
+            const VerticalDivider(width: 1),
+            Expanded(child: content),
           ],
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  Widget _desktopSidebar(BuildContext context) {
+    void navigate(String label) {
+      final route = switch (label) {
+        'Learning Resources' => '/custodian-resources',
+        'Borrow Requests' => '/custodian-borrow-requests',
+        'Return Verification' => '/custodian-return-verification',
+        'Reports' =>
+          role == AccountRole.propertyCustodian
+              ? '/custodian-reports'
+              : '/admin-dashboard',
+        'User Management' => '/admin-users',
+        'System Logs' => '/admin-logs',
+        _ => null,
+      };
+      if (route != null) Navigator.pushNamed(context, route);
+    }
+
+    if (role == AccountRole.propertyCustodian) {
+      return CustodianSidebar(onNavigate: navigate, onSignOut: onSignOut);
+    }
+    return AdminSidebar(onNavigate: navigate, onSignOut: onSignOut);
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
+class _BorrowerNavigationBar extends StatelessWidget {
+  const _BorrowerNavigationBar();
 
   @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    onPressed: onPressed,
-    icon: Icon(icon),
-    label: Text(label),
-    style: OutlinedButton.styleFrom(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-    ),
+  Widget build(BuildContext context) => NavigationBar(
+    selectedIndex: 0,
+    onDestinationSelected: (index) {
+      if (index == 1) Navigator.pushNamed(context, '/resources');
+      if (index == 2) Navigator.pushNamed(context, '/return');
+    },
+    destinations: const [
+      NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home),
+        label: 'Home',
+      ),
+      NavigationDestination(icon: Icon(Icons.search), label: 'Resources'),
+      NavigationDestination(icon: Icon(Icons.history), label: 'Activity'),
+      NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
+    ],
   );
 }

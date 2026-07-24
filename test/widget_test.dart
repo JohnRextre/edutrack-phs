@@ -5,22 +5,42 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:edutrack_phs/main.dart';
+import 'package:edutrack_phs/models/account_role.dart';
+import 'package:edutrack_phs/screens/dashboard_screen.dart';
 
 void main() {
   testWidgets('login navigates to the dashboard', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
-    expect(find.text('EduTrack PHS'), findsOneWidget);
     await tester.enterText(
-      find.bySemanticsLabel('School ID or Email'),
+      find.bySemanticsLabel('School ID / Email'),
       'john@phs.edu',
     );
     await tester.enterText(find.bySemanticsLabel('Password'), 'password');
-    await tester.tap(find.text('Log in'));
+    await tester.tap(find.text('Login with EduTrack'));
     await tester.pumpAndSettle();
     expect(find.text('Welcome, John Rexter'), findsOneWidget);
-    expect(find.text('Active Borrowings'), findsOneWidget);
+    expect(find.text('My Borrowed Resources'), findsOneWidget);
+  });
+
+  testWidgets('property custodian dashboard shows management metrics', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: const DashboardScreen(role: AccountRole.propertyCustodian),
+      ),
+    );
+
+    expect(find.text('Dashboard Overview'), findsOneWidget);
+    expect(find.text('Learning Resources'), findsOneWidget);
+    expect(find.text('Sign Out'), findsOneWidget);
+    expect(find.text('QR Codes'), findsNothing);
+    expect(find.text('User Management'), findsNothing);
+    expect(find.text('System Logs'), findsNothing);
   });
 }
