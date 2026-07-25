@@ -59,6 +59,8 @@ flutter:
 
   assets:
     - lib/assets/borrowed_assets/
+    - lib/assets/edutrack_logo/EduTrack_Rectangle_Logo-NoBackground.png
+    - lib/assets/edutrack_logo/EduTrack_Square_Logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

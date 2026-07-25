@@ -11,6 +11,7 @@ import 'screens/custodian_resources_screen.dart';
 import 'screens/custodian_return_verification_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/homepage_screen.dart';
 import 'screens/my_borrowings_screen.dart';
 import 'screens/my_requests_screen.dart';
 import 'screens/profile_screen.dart';
@@ -35,9 +36,11 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      initialRoute: '/',
+      initialRoute: '/home',
       routes: {
-        '/': (context) => const LoginScreen(),
+        '/': (context) => const HomepageScreen(),
+        '/home': (context) => const HomepageScreen(),
+        '/login': (context) => const LoginScreen(),
         '/dashboard': (context) {
           return DashboardScreen(
             role: _roleFromArguments(

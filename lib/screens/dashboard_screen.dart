@@ -25,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isBorrower = _selectedRole.isBorrower;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !isBorrower,
         title: const Text('Dashboard'),
         actions: [
           PopupMenuButton<AccountRole>(

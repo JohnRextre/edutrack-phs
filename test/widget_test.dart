@@ -15,12 +15,14 @@ import 'package:edutrack_phs/screens/dashboard_screen.dart';
 void main() {
   testWidgets('login navigates to the dashboard', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
+    await tester.tap(find.text('Access Portal'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.bySemanticsLabel('School ID / Email'),
       'john@phs.edu',
     );
     await tester.enterText(find.bySemanticsLabel('Password'), 'password');
-    await tester.tap(find.text('Login with EduTrack'));
+    await tester.tap(find.text('Login with EduTrack PHS'));
     await tester.pumpAndSettle();
     expect(find.text('Welcome, John Rexter'), findsOneWidget);
     expect(find.text('My Borrowed Resources'), findsOneWidget);

@@ -48,6 +48,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Center(
+                      child: Image.asset(
+                        'lib/assets/edutrack_logo/EduTrack_Square_Logo.png',
+                        width: 112,
+                        height: 112,
+                        errorBuilder: (_, _, _) => CircleAvatar(
+                          radius: 48,
+                          backgroundColor: colors.primaryContainer,
+                          child: Icon(
+                            Icons.school_outlined,
+                            size: 52,
+                            color: colors.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,27 +78,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                         ),
                         TextButton(
-                          onPressed: () {},
-                          child: const Text('Back to Portal'),
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil('/home', (route) => false),
+                          child: const Text('Back to Homepage'),
                         ),
                       ],
                     ),
                     const SizedBox(height: 28),
-                    _FieldLabel('Select Campus:'),
-                    DropdownButtonFormField<String>(
-                      initialValue: 'NU Baliwag',
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.account_balance_outlined),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'NU Baliwag',
-                          child: Text('NU Baliwag'),
-                        ),
-                      ],
-                      onChanged: (_) {},
-                    ),
-                    const SizedBox(height: 18),
                     _FieldLabel('Select Account Type:'),
                     DropdownButtonFormField<AccountRole>(
                       initialValue: _selectedRole,
@@ -161,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       height: 50,
                       child: FilledButton(
                         onPressed: _login,
-                        child: const Text('Login with EduTrack'),
+                        child: const Text('Login with EduTrack PHS'),
                       ),
                     ),
                     const SizedBox(height: 14),
