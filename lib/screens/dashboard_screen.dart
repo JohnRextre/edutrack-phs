@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
 import '../widgets/admin_sidebar.dart';
+import '../widgets/borrower_navigation_bar.dart';
 import '../widgets/custodian_sidebar.dart';
 import 'admin_dashboard_screen.dart';
 import 'borrower_dashboard_screen.dart';
@@ -63,7 +64,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               role: _selectedRole,
               onSignOut: () => _signOut(context),
             ),
-      bottomNavigationBar: isBorrower ? const _BorrowerNavigationBar() : null,
+      bottomNavigationBar: isBorrower
+          ? const BorrowerNavigationBar(selectedIndex: 0)
+          : null,
     );
   }
 
@@ -153,27 +156,4 @@ class _ManagementShell extends StatelessWidget {
     }
     return AdminSidebar(onNavigate: navigate, onSignOut: onSignOut);
   }
-}
-
-class _BorrowerNavigationBar extends StatelessWidget {
-  const _BorrowerNavigationBar();
-
-  @override
-  Widget build(BuildContext context) => NavigationBar(
-    selectedIndex: 0,
-    onDestinationSelected: (index) {
-      if (index == 1) Navigator.pushNamed(context, '/resources');
-      if (index == 2) Navigator.pushNamed(context, '/return');
-    },
-    destinations: const [
-      NavigationDestination(
-        icon: Icon(Icons.home_outlined),
-        selectedIcon: Icon(Icons.home),
-        label: 'Home',
-      ),
-      NavigationDestination(icon: Icon(Icons.search), label: 'Resources'),
-      NavigationDestination(icon: Icon(Icons.history), label: 'Activity'),
-      NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
-    ],
-  );
 }
