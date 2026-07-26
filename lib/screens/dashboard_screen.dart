@@ -85,7 +85,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'Reports' =>
           role == AccountRole.propertyCustodian
               ? '/custodian-reports'
-              : '/admin-dashboard',
+              : '/custodian-reports',
         'User Management' => '/admin-users',
         'System Logs' => '/admin-logs',
         _ => null,
@@ -144,7 +144,7 @@ class _ManagementShell extends StatelessWidget {
         'Reports' =>
           role == AccountRole.propertyCustodian
               ? '/custodian-reports'
-              : '/admin-dashboard',
+              : '/custodian-reports',
         'User Management' => '/admin-users',
         'System Logs' => '/admin-logs',
         _ => null,

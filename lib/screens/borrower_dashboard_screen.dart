@@ -70,23 +70,27 @@ class _BorrowerStats extends StatelessWidget {
   const _BorrowerStats();
 
   @override
-  Widget build(BuildContext context) => GridView.count(
-    crossAxisCount: 2,
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    crossAxisSpacing: 12,
-    mainAxisSpacing: 12,
-    childAspectRatio: 1.45,
-    children: const [
-      _Stat('My Borrowed Resources', '2', Icons.inventory_2_outlined),
-      _Stat('Pending Borrow Requests', '1', Icons.pending_actions_outlined),
-      _Stat(
-        'Pending Return Requests',
-        '0',
-        Icons.assignment_turned_in_outlined,
-      ),
-      _Stat('Overdue Resources', '1', Icons.warning_amber_outlined),
-    ],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      // Mobile labels wrap to two lines. Taller cards prevent a RenderFlex
+      // overflow on phones while preserving the two-column dashboard layout.
+      childAspectRatio: constraints.maxWidth < 600 ? 0.95 : 1.45,
+      children: const [
+        _Stat('My Borrowed Resources', '2', Icons.inventory_2_outlined),
+        _Stat('Pending Borrow Requests', '1', Icons.pending_actions_outlined),
+        _Stat(
+          'Pending Return Requests',
+          '0',
+          Icons.assignment_turned_in_outlined,
+        ),
+        _Stat('Overdue Resources', '1', Icons.warning_amber_outlined),
+      ],
+    ),
   );
 }
 
@@ -102,16 +106,17 @@ class _Stat extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Icon(icon, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 12),
           Text(
             value,
             style: Theme.of(
               context,
             ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
-          Text(label),
+          const SizedBox(height: 8),
+          Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
         ],
       ),
     ),

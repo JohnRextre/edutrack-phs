@@ -104,11 +104,14 @@ class _SummaryGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final columns = constraints.maxWidth >= 1000 ? 5 : 2;
+      final isCompact = constraints.maxWidth < 760;
       return GridView.count(
         crossAxisCount: columns,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: columns == 5 ? 1.55 : 1.65,
+        // Two-column cards need room for the icon, value, and label on
+        // phones. A taller aspect ratio avoids RenderFlex overflows.
+        childAspectRatio: columns == 5 ? 1.55 : (isCompact ? 1.1 : 1.65),
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         children: const [
@@ -155,9 +158,9 @@ class _SummaryCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Icon(icon, color: primary ? colors.onPrimary : colors.primary),
+            const SizedBox(height: 12),
             Text(
               value,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -165,8 +168,11 @@ class _SummaryCard extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
+            const SizedBox(height: 8),
             Text(
               label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: primary ? colors.onPrimary : colors.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
