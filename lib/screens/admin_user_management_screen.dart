@@ -404,10 +404,147 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     );
   }
 
+  void _showChangeRoleDialog(UserAccount user) {
+    UserRole selectedRole = user.role;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Change Role - ${user.fullName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Current role: ${user.role.label}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<UserRole>(
+                value: selectedRole,
+                decoration: const InputDecoration(
+                  labelText: 'New Role',
+                  border: OutlineInputBorder(),
+                ),
+                items: UserRole.values.map((role) {
+                  return DropdownMenuItem(
+                    value: role,
+                    child: Row(
+                      children: [
+                        Icon(role.icon, size: 20),
+                        const SizedBox(width: 8),
+                        Text(role.label),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      selectedRole = value;
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Role changed to ${selectedRole.label} for ${user.fullName}.',
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Update Role'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showResetPasswordDialog(UserAccount user) {
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reset Password - ${user.fullName}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Enter new password for this user.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: confirmPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (passwordController.text != confirmPasswordController.text) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Passwords do not match.')),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Password reset successfully for ${user.fullName}.',
+                  ),
+                ),
+              );
+            },
+            child: const Text('Reset Password'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showDeleteConfirmation(UserAccount user) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        icon: Icon(
+          Icons.warning_amber_rounded,
+          color: Colors.red[700],
+          size: 48,
+        ),
         title: const Text('Delete Account'),
         content: Text(
           'Are you sure you want to delete the account for "${user.fullName}"?\n\n'
@@ -624,6 +761,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                         child: _UserCard(
                           user: user,
                           onEdit: () => _showEditUserDialog(user),
+                          onChangeRole: () => _showChangeRoleDialog(user),
+                          onResetPassword: () => _showResetPasswordDialog(user),
                           onToggleStatus: () => _toggleUserStatus(user),
                           onDelete: () => _showDeleteConfirmation(user),
                         ),
@@ -646,25 +785,28 @@ class _UserCard extends StatelessWidget {
   const _UserCard({
     required this.user,
     required this.onEdit,
+    required this.onChangeRole,
+    required this.onResetPassword,
     required this.onToggleStatus,
     required this.onDelete,
   });
 
   final UserAccount user;
   final VoidCallback onEdit;
+  final VoidCallback onChangeRole;
+  final VoidCallback onResetPassword;
   final VoidCallback onToggleStatus;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: colorScheme.surfaceContainerHighest,
       shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 1,
-        ),
+        side: BorderSide(color: colorScheme.outlineVariant, width: 1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
@@ -677,12 +819,11 @@ class _UserCard extends StatelessWidget {
               // Avatar
               CircleAvatar(
                 backgroundColor:
-                    user.avatarColor ??
-                    Theme.of(context).colorScheme.primaryContainer,
+                    user.avatarColor ?? colorScheme.primaryContainer,
                 child: Text(
                   _getInitials(user.fullName),
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    color: colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -707,7 +848,7 @@ class _UserCard extends StatelessWidget {
                         Icon(
                           user.role.icon,
                           size: 14,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -753,6 +894,12 @@ class _UserCard extends StatelessWidget {
                     case 'edit':
                       onEdit();
                       break;
+                    case 'change_role':
+                      onChangeRole();
+                      break;
+                    case 'reset_password':
+                      onResetPassword();
+                      break;
                     case 'toggle':
                       onToggleStatus();
                       break;
@@ -773,23 +920,53 @@ class _UserCard extends StatelessWidget {
                     ),
                   ),
                   const PopupMenuItem(
-                    value: 'toggle',
+                    value: 'change_role',
                     child: Row(
                       children: [
-                        Icon(Icons.toggle_on, size: 20),
+                        Icon(Icons.admin_panel_settings, size: 20),
                         SizedBox(width: 8),
-                        Text('Toggle Status'),
+                        Text('Change Role / Permissions'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'reset_password',
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_reset, size: 20),
+                        SizedBox(width: 8),
+                        Text('Reset Password'),
                       ],
                     ),
                   ),
                   const PopupMenuDivider(),
                   PopupMenuItem(
+                    value: 'toggle',
+                    child: Row(
+                      children: [
+                        Icon(
+                          user.status == AccountStatus.active
+                              ? Icons.toggle_off
+                              : Icons.toggle_on,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          user.status == AccountStatus.active
+                              ? 'Deactivate Account'
+                              : 'Reactivate Account',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
                         Icon(Icons.delete, size: 20, color: Colors.red),
-                        const SizedBox(width: 8),
-                        const Text(
+                        SizedBox(width: 8),
+                        Text(
                           'Delete Account',
                           style: TextStyle(color: Colors.red),
                         ),
