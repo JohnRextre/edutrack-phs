@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/resource_item.dart';
 import '../widgets/borrower_navigation_bar.dart';
 
 class ResourcesScreen extends StatefulWidget {
@@ -12,7 +13,311 @@ class ResourcesScreen extends StatefulWidget {
 class _ResourcesScreenState extends State<ResourcesScreen> {
   final Map<String, bool> _pendingRequests = {};
 
-  Future<void> _openBorrowRequest(_Resource resource) async {
+  // Tier 1: Main Category Selection
+  String _selectedMainCategory = 'All';
+
+  // Tier 2: Sub-Category Selection
+  String _selectedSubCategory = 'All';
+
+  // Tier 3: Item Type Filter
+  String _selectedItemType = 'All';
+
+  // Availability Filter
+  String _selectedAvailability = 'All';
+
+  // Sorting Option
+  String _selectedSortOption = 'Name (A-Z)';
+
+  // Get sub-categories based on selected main category
+  List<String> _getSubCategories(String mainCategory) {
+    if (mainCategory == 'All') {
+      // Return all sub-categories from all main categories
+      return [
+        'All',
+        generalLearning,
+        scienceLab,
+        mathematics,
+        audioVisual,
+        sports,
+        artsDesign,
+        generalInfrastructure,
+        vocationalTechnicalTools,
+        homeEconomics,
+        industrialArts,
+        agriFisheryArts,
+      ];
+    }
+
+    switch (mainCategory) {
+      case generalLearningResources:
+        return [
+          'All',
+          generalLearning,
+          scienceLab,
+          mathematics,
+          audioVisual,
+          sports,
+          artsDesign,
+        ];
+      case ictResources:
+        return ['All', generalInfrastructure, vocationalTechnicalTools];
+      case tvlResources:
+        return ['All', homeEconomics, industrialArts, agriFisheryArts];
+      default:
+        return ['All'];
+    }
+  }
+
+  // Get item types based on selected sub-category
+  List<String> _getItemTypes(String subCategory) {
+    if (subCategory == 'All') {
+      // Return all item types for the current main category
+      if (_selectedMainCategory == 'All') {
+        // Return all item types from all categories
+        return [
+          'All',
+          ...generalLearningItemTypes,
+          ...scienceLabItemTypes,
+          ...mathematicsItemTypes,
+          ...audioVisualItemTypes,
+          ...sportsItemTypes,
+          ...artsDesignItemTypes,
+          ...generalInfrastructureItemTypes,
+          ...vocationalTechnicalItemTypes,
+          ...homeEconomicsItemTypes,
+          ...industrialArtsItemTypes,
+          ...agriFisheryArtsItemTypes,
+        ];
+      }
+
+      switch (_selectedMainCategory) {
+        case generalLearningResources:
+          return [
+            'All',
+            ...generalLearningItemTypes,
+            ...scienceLabItemTypes,
+            ...mathematicsItemTypes,
+            ...audioVisualItemTypes,
+            ...sportsItemTypes,
+            ...artsDesignItemTypes,
+          ];
+        case ictResources:
+          return [
+            'All',
+            ...generalInfrastructureItemTypes,
+            ...vocationalTechnicalItemTypes,
+          ];
+        case tvlResources:
+          return [
+            'All',
+            ...homeEconomicsItemTypes,
+            ...industrialArtsItemTypes,
+            ...agriFisheryArtsItemTypes,
+          ];
+        default:
+          return ['All'];
+      }
+    }
+    return ['All', ...getItemTypesForSubCategory(subCategory)];
+  }
+
+  // Filter and sort resources
+  List<ResourceItem> _getFilteredResources() {
+    List<ResourceItem> filtered = allResourceItems.where((item) {
+      // Tier 1 filter
+      final matchesMainCategory =
+          _selectedMainCategory == 'All' ||
+          item.mainCategory == _selectedMainCategory;
+
+      // Tier 2 filter
+      final matchesSubCategory =
+          _selectedSubCategory == 'All' ||
+          item.subCategory == _selectedSubCategory;
+
+      // Tier 3 filter
+      final matchesItemType =
+          _selectedItemType == 'All' || item.itemType == _selectedItemType;
+
+      // Availability filter
+      final matchesAvailability =
+          _selectedAvailability == 'All' ||
+          (_selectedAvailability == 'Available Only' && item.isAvailable) ||
+          (_selectedAvailability == 'On Loan / Borrowed' && !item.isAvailable);
+
+      return matchesMainCategory &&
+          matchesSubCategory &&
+          matchesItemType &&
+          matchesAvailability;
+    }).toList();
+
+    // Sort resources
+    switch (_selectedSortOption) {
+      case 'Name (A-Z)':
+        filtered.sort((a, b) => a.name.compareTo(b.name));
+        break;
+      case 'Most Borrowed':
+        // For demo purposes, we'll just keep the original order
+        // In a real app, this would sort by borrow count
+        break;
+      case 'Recently Added':
+        // For demo purposes, we'll reverse the list
+        filtered = filtered.reversed.toList();
+        break;
+    }
+
+    return filtered;
+  }
+
+  void _openFilterModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => FractionallySizedBox(
+          heightFactor: 0.85,
+          child: Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Filters',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 20),
+
+                        // Availability Filter
+                        Text(
+                          'Availability',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children:
+                              ['All', 'Available Only', 'On Loan / Borrowed']
+                                  .map(
+                                    (option) => FilterChip(
+                                      label: Text(option),
+                                      selected: _selectedAvailability == option,
+                                      onSelected: (selected) {
+                                        setModalState(() {
+                                          _selectedAvailability = option;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Tier 3: Item Type Filter (Horizontal Scrollable)
+                        Text(
+                          'Item Type',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 10),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _getItemTypes(_selectedSubCategory)
+                                .map(
+                                  (itemType) => Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: FilterChip(
+                                      label: Text(
+                                        itemType,
+                                        style: TextStyle(
+                                          fontSize: itemType.length > 20
+                                              ? 11
+                                              : null,
+                                        ),
+                                      ),
+                                      selected: _selectedItemType == itemType,
+                                      onSelected: (selected) {
+                                        setModalState(() {
+                                          _selectedItemType = itemType;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Sorting Options
+                        Text(
+                          'Sort By',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children:
+                              ['Name (A-Z)', 'Most Borrowed', 'Recently Added']
+                                  .map(
+                                    (option) => FilterChip(
+                                      label: Text(option),
+                                      selected: _selectedSortOption == option,
+                                      onSelected: (selected) {
+                                        setModalState(() {
+                                          _selectedSortOption = option;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Apply Button
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        setState(() {});
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Apply Filters'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBorrowRequest(ResourceItem resource) async {
     final submitted = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => _BorrowRequestScreen(resource: resource),
@@ -31,28 +336,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final resources = [
-      const _Resource(
-        name: 'Biology Microscope',
-        code: 'SCI-MIC-001',
-        category: 'Science Lab - Grade 11',
-        tags: ['Grade 11', 'Science Lab'],
-        description:
-            'Standard compound microscope with 10×-40× objective lenses. Essential for STEM biology activities.',
-        assetPath: 'lib/assets/borrowed_assets/Biology Microscope.png',
-        fallbackIcon: Icons.biotech_outlined,
-      ),
-      const _Resource(
-        name: 'Laptop Dell Latitude',
-        code: 'PHS-LPT-042',
-        category: 'ICT - Device',
-        tags: ['ICT', 'Device'],
-        description:
-            'Standard issue student laptop for ICT and programming classes. Includes required learning software.',
-        assetPath: 'lib/assets/borrowed_assets/Dell Laptop.png',
-        fallbackIcon: Icons.laptop_mac_outlined,
-      ),
-    ];
+    final filteredResources = _getFilteredResources();
+    final subCategories = _getSubCategories(_selectedMainCategory);
+    final itemTypes = _getItemTypes(_selectedSubCategory);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Browse Resources')),
@@ -63,32 +349,130 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
             hintText: 'Search resources',
             leading: const Icon(Icons.search),
             trailing: [
-              IconButton(onPressed: () {}, icon: const Icon(Icons.tune)),
+              IconButton(
+                onPressed: _openFilterModal,
+                icon: const Icon(Icons.tune),
+              ),
             ],
           ),
           const SizedBox(height: 20),
+
+          // Tier 1: Main Category Selection
           Text(
-            'Categories',
+            'Resource Category',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilterChip(
-                label: const Text('Grade 11'),
-                selected: true,
-                onSelected: (_) {},
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'All',
+                label: Text('All'),
+                icon: Icon(Icons.apps_outlined),
               ),
-              FilterChip(label: const Text('Science Lab'), onSelected: (_) {}),
-              FilterChip(label: const Text('Computer Lab'), onSelected: (_) {}),
-              FilterChip(label: const Text('Mathematics'), onSelected: (_) {}),
+              ButtonSegment(
+                value: generalLearningResources,
+                label: Text('General Learning'),
+                icon: Icon(Icons.menu_book_outlined),
+              ),
+              ButtonSegment(
+                value: ictResources,
+                label: Text('ICT'),
+                icon: Icon(Icons.computer_outlined),
+              ),
+              ButtonSegment(
+                value: tvlResources,
+                label: Text('TVL'),
+                icon: Icon(Icons.engineering_outlined),
+              ),
             ],
+            selected: {_selectedMainCategory},
+            onSelectionChanged: (Set<String> newSelection) {
+              setState(() {
+                _selectedMainCategory = newSelection.first;
+                _selectedSubCategory =
+                    'All'; // Reset sub-category on main category change
+                _selectedItemType =
+                    'All'; // Reset item type on main category change
+              });
+            },
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
+
+          // Tier 2: Sub-Category Filter Chips
+          Text(
+            'Sub-Category',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: subCategories
+                  .map(
+                    (subCategory) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(subCategory),
+                        selected: _selectedSubCategory == subCategory,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedSubCategory = subCategory;
+                            _selectedItemType =
+                                'All'; // Reset item type when sub-category changes
+                          });
+                        },
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Tier 3: Item Type Filter Chips
+          if (_selectedSubCategory != 'All') ...[
+            Text(
+              'Item Type',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: itemTypes
+                    .map(
+                      (itemType) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(
+                            itemType,
+                            style: TextStyle(
+                              fontSize: itemType.length > 20 ? 11 : null,
+                            ),
+                          ),
+                          selected: _selectedItemType == itemType,
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedItemType = itemType;
+                            });
+                          },
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Available Resources
           Text(
             'Available resources',
             style: Theme.of(
@@ -96,16 +480,27 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
-          ...resources.map(
-            (resource) => Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: _ResourceCard(
-                resource: resource,
-                pending: _pendingRequests[resource.code] ?? false,
-                onBorrow: () => _openBorrowRequest(resource),
+          if (filteredResources.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No resources found for the selected category.',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...filteredResources.map(
+              (resource) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _ResourceCard(
+                  resource: resource,
+                  pending: _pendingRequests[resource.code] ?? false,
+                  onBorrow: () => _openBorrowRequest(resource),
+                ),
               ),
             ),
-          ),
         ],
       ),
       bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 1),
@@ -116,7 +511,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 class _BorrowRequestScreen extends StatefulWidget {
   const _BorrowRequestScreen({required this.resource});
 
-  final _Resource resource;
+  final ResourceItem resource;
 
   @override
   State<_BorrowRequestScreen> createState() => _BorrowRequestScreenState();
@@ -212,7 +607,7 @@ class _BorrowRequestScreenState extends State<_BorrowRequestScreen> {
                           runSpacing: 8,
                           children: [
                             Chip(label: Text('Code: ${resource.code}')),
-                            Chip(label: Text(resource.category)),
+                            Chip(label: Text(resource.subCategory)),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -284,7 +679,7 @@ class _ResourceCard extends StatelessWidget {
     required this.pending,
     required this.onBorrow,
   });
-  final _Resource resource;
+  final ResourceItem resource;
   final bool pending;
   final VoidCallback onBorrow;
 
@@ -306,9 +701,24 @@ class _ResourceCard extends StatelessWidget {
             children: [
               Wrap(
                 spacing: 8,
-                children: resource.tags
-                    .map((tag) => Chip(label: Text(tag)))
-                    .toList(),
+                children: [
+                  Chip(
+                    label: Text(resource.subCategory),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer,
+                  ),
+                  Chip(
+                    label: Text(
+                      resource.isAvailable
+                          ? '${resource.availableQuantity} Available'
+                          : 'Out of Stock',
+                    ),
+                    backgroundColor: resource.isAvailable
+                        ? Colors.green.withValues(alpha: 0.2)
+                        : Colors.red.withValues(alpha: 0.2),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -327,13 +737,23 @@ class _ResourceCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: pending ? null : onBorrow,
+                  onPressed: (pending || !resource.isAvailable)
+                      ? null
+                      : onBorrow,
                   icon: Icon(
                     pending
                         ? Icons.pending_actions
-                        : Icons.add_shopping_cart_outlined,
+                        : resource.isAvailable
+                        ? Icons.add_shopping_cart_outlined
+                        : Icons.block_outlined,
                   ),
-                  label: Text(pending ? 'Pending Request' : 'Borrow'),
+                  label: Text(
+                    pending
+                        ? 'Pending Request'
+                        : resource.isAvailable
+                        ? 'Borrow'
+                        : 'Unavailable',
+                  ),
                 ),
               ),
             ],
@@ -346,7 +766,7 @@ class _ResourceCard extends StatelessWidget {
 
 class _ResourceImage extends StatelessWidget {
   const _ResourceImage({required this.resource, required this.height});
-  final _Resource resource;
+  final ResourceItem resource;
   final double height;
 
   @override
@@ -355,7 +775,7 @@ class _ResourceImage extends StatelessWidget {
     height: height,
     width: double.infinity,
     fit: BoxFit.cover,
-    errorBuilder: (_, _, _) => Container(
+    errorBuilder: (context, exception, stackTrace) => Container(
       height: height,
       color: Theme.of(context).colorScheme.secondaryContainer,
       alignment: Alignment.center,
@@ -391,23 +811,4 @@ class _DateField extends StatelessWidget {
       child: Text(value),
     ),
   );
-}
-
-class _Resource {
-  const _Resource({
-    required this.name,
-    required this.code,
-    required this.category,
-    required this.tags,
-    required this.description,
-    required this.assetPath,
-    required this.fallbackIcon,
-  });
-  final String name;
-  final String code;
-  final String category;
-  final List<String> tags;
-  final String description;
-  final String assetPath;
-  final IconData fallbackIcon;
 }
