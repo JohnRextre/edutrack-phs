@@ -1,6 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
+import '../services/auth_service.dart';
+import 'initial_admin_setup_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,26 +15,70 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _schoolIdController = TextEditingController();
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
   AccountRole _selectedRole = AccountRole.student;
   bool _obscurePassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _schoolIdController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  void _login() {
-    if (_formKey.currentState!.validate()) {
-      Navigator.pushReplacementNamed(
-        context,
-        '/dashboard',
-        arguments: _selectedRole.name,
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final user = await _authService.signInWithAccount(
+        email: _identifierController.text,
+        password: _passwordController.text,
+        selectedRole: _selectedRole,
       );
+
+      if (!mounted) return;
+      if (user.uid.isNotEmpty) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/dashboard',
+          arguments: _selectedRole.name,
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      _showSnackBar(AuthService.friendlyErrorMessage(error));
+    } catch (error) {
+      if (!mounted) return;
+      _showSnackBar(AuthService.friendlyErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _openRegistrationFlow() async {
+    try {
+      final adminExists = await _authService.checkAdminExists();
+      if (!mounted) return;
+
+      final route = adminExists
+          ? const RegisterScreen()
+          : const InitialAdminSetupScreen();
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => route));
+    } catch (error) {
+      if (!mounted) return;
+      _showSnackBar(AuthService.friendlyErrorMessage(error));
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -88,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 28),
                     _FieldLabel('Select Account Type:'),
                     DropdownButtonFormField<AccountRole>(
-                      initialValue: _selectedRole,
+                      value: _selectedRole,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.person_outline),
                       ),
@@ -110,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 18),
                     TextFormField(
-                      controller: _schoolIdController,
+                      controller: _identifierController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
                         labelText: 'School ID / Email',
@@ -164,8 +212,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       height: 50,
                       child: FilledButton(
-                        onPressed: _login,
-                        child: const Text('Login with EduTrack PHS'),
+                        onPressed: _isLoading ? null : _login,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Login with EduTrack PHS'),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -173,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         TextButton(
-                          onPressed: () {},
+                          onPressed: _openRegistrationFlow,
                           child: const Text('Create an account'),
                         ),
                         TextButton(

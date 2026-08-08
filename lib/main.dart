@@ -12,12 +12,17 @@ import 'screens/custodian_return_verification_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/homepage_screen.dart';
+import 'screens/initial_admin_setup_screen.dart';
 import 'screens/my_borrowings_screen.dart';
 import 'screens/my_requests_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/register_screen.dart';
 import 'screens/resources_screen.dart';
+import 'services/auth_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AuthService.initialize();
   runApp(const MyApp());
 }
 
@@ -41,6 +46,8 @@ class MyApp extends StatelessWidget {
         '/': (context) => const HomepageScreen(),
         '/home': (context) => const HomepageScreen(),
         '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/initial-admin-setup': (context) => const InitialAdminSetupScreen(),
         '/dashboard': (context) {
           return DashboardScreen(
             role: _roleFromArguments(

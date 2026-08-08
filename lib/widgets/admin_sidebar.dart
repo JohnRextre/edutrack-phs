@@ -18,7 +18,7 @@ class AdminSidebar extends StatelessWidget {
       ('System Logs', Icons.security_outlined),
       ('Reports', Icons.bar_chart_outlined),
     ];
-    return ColoredBox(
+    return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: SafeArea(
         child: Padding(

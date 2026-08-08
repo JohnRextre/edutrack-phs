@@ -41,7 +41,7 @@ class _SidebarFrame extends StatelessWidget {
   final VoidCallback onSignOut;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
+  Widget build(BuildContext context) => Material(
     color: Theme.of(context).colorScheme.surfaceContainerLow,
     child: SafeArea(
       child: Padding(
