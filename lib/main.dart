@@ -7,7 +7,7 @@ import 'screens/admin_system_logs_screen.dart';
 import 'screens/admin_user_management_screen.dart';
 import 'screens/custodian_borrow_requests_screen.dart';
 import 'screens/custodian_reports_screen.dart';
-import 'screens/custodian_resources_screen.dart';
+import 'screens/custodian/learning_resources_screen.dart';
 import 'screens/custodian_return_verification_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
@@ -60,7 +60,7 @@ class MyApp extends StatelessWidget {
         '/my-requests': (context) => const MyRequestsScreen(),
         '/activity': (context) => const ActivityScreen(),
         '/profile': (context) => const ProfileScreen(),
-        '/custodian-resources': (context) => const CustodianResourcesScreen(),
+        '/custodian-resources': (context) => const LearningResourcesScreen(),
         '/custodian-borrow-requests': (context) =>
             const CustodianBorrowRequestsScreen(),
         '/custodian-return-verification': (context) =>

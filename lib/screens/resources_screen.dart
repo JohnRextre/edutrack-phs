@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/resource_item.dart';
+import '../services/resource_service.dart';
 import '../widgets/borrower_navigation_bar.dart';
 
 class ResourcesScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class ResourcesScreen extends StatefulWidget {
 
 class _ResourcesScreenState extends State<ResourcesScreen> {
   final Map<String, bool> _pendingRequests = {};
+  final ResourceService _resourceService = ResourceService();
 
   // Tier 1: Main Category Selection
   String _selectedMainCategory = 'All';
@@ -122,8 +124,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
   }
 
   // Filter and sort resources
-  List<ResourceItem> _getFilteredResources() {
-    List<ResourceItem> filtered = allResourceItems.where((item) {
+  List<ResourceItem> _getFilteredResources(List<ResourceItem> allResources) {
+    List<ResourceItem> filtered = allResources.where((item) {
       // Tier 1 filter
       final matchesMainCategory =
           _selectedMainCategory == 'All' ||
@@ -160,8 +162,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
         // In a real app, this would sort by borrow count
         break;
       case 'Recently Added':
-        // For demo purposes, we'll reverse the list
-        filtered = filtered.reversed.toList();
+        filtered.sort((a, b) {
+          final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
         break;
     }
 
@@ -336,13 +341,33 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredResources = _getFilteredResources();
     final subCategories = _getSubCategories(_selectedMainCategory);
     final itemTypes = _getItemTypes(_selectedSubCategory);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Browse Resources')),
-      body: ListView(
+      body: StreamBuilder<List<ResourceItem>>(
+        stream: _resourceService.watchResources(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Unable to load resources.\n'
+                '${ResourceService.friendlyErrorMessage(snapshot.error!)}',
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final filteredResources =
+              _getFilteredResources(snapshot.data ?? const []);
+
+          return ListView(
         padding: const EdgeInsets.all(20),
         children: [
           SearchBar(
@@ -502,6 +527,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
               ),
             ),
         ],
+      );
+        },
       ),
       bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 1),
     );
@@ -770,22 +797,57 @@ class _ResourceImage extends StatelessWidget {
   final double height;
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-    resource.assetPath,
-    height: height,
-    width: double.infinity,
-    fit: BoxFit.cover,
-    errorBuilder: (context, exception, stackTrace) => Container(
+  Widget build(BuildContext context) {
+    final imageUrl = resource.imageUrl?.trim() ?? '';
+    if (imageUrl.isEmpty) {
+      return Container(
+        height: height,
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        alignment: Alignment.center,
+        child: Icon(
+          resource.fallbackIcon,
+          size: 64,
+          color: Theme.of(context).colorScheme.onSecondaryContainer,
+        ),
+      );
+    }
+
+    if (imageUrl.startsWith('http')) {
+      return Image.network(
+        imageUrl,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, exception, stackTrace) => Container(
+          height: height,
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          alignment: Alignment.center,
+          child: Icon(
+            resource.fallbackIcon,
+            size: 64,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
+        ),
+      );
+    }
+
+    return Image.asset(
+      imageUrl,
       height: height,
-      color: Theme.of(context).colorScheme.secondaryContainer,
-      alignment: Alignment.center,
-      child: Icon(
-        resource.fallbackIcon,
-        size: 64,
-        color: Theme.of(context).colorScheme.onSecondaryContainer,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (context, exception, stackTrace) => Container(
+        height: height,
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        alignment: Alignment.center,
+        child: Icon(
+          resource.fallbackIcon,
+          size: 64,
+          color: Theme.of(context).colorScheme.onSecondaryContainer,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _DateField extends StatelessWidget {

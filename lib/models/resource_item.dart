@@ -1,58 +1,261 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class ResourceItem {
   const ResourceItem({
-    required this.name,
-    required this.code,
+    required this.id,
+    required this.itemName,
+    required this.itemCode,
     required this.mainCategory,
     required this.subCategory,
     required this.itemType,
+    required this.totalQuantity,
+    required this.availableQuantity,
     required this.description,
-    required this.assetPath,
-    required this.fallbackIcon,
-    this.totalQuantity = 1,
-    this.availableQuantity = 1,
-    this.borrowedQuantity = 0,
+    this.imageUrl,
+    this.createdAt,
   });
 
-  final String name;
-  final String code;
+  final String id;
+  final String itemName;
+  final String itemCode;
   final String mainCategory;
   final String subCategory;
   final String itemType;
-  final String description;
-  final String assetPath;
-  final IconData fallbackIcon;
   final int totalQuantity;
   final int availableQuantity;
-  final int borrowedQuantity;
+  final String description;
+  final String? imageUrl;
+  final DateTime? createdAt;
+
+  /// Legacy aliases used by borrower screens.
+  String get name => itemName;
+  String get code => itemCode;
+  String get assetPath => imageUrl ?? '';
+  int get borrowedQuantity =>
+      (totalQuantity - availableQuantity).clamp(0, totalQuantity);
 
   bool get isAvailable => availableQuantity > 0;
+
+  IconData get fallbackIcon => ResourceTaxonomy.iconForMainCategory(mainCategory);
+
+  factory ResourceItem.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final createdAtValue = data['createdAt'];
+    DateTime? createdAt;
+    if (createdAtValue is Timestamp) {
+      createdAt = createdAtValue.toDate();
+    }
+
+    return ResourceItem(
+      id: doc.id,
+      itemName: (data['itemName'] ?? data['name'] ?? '').toString(),
+      itemCode: (data['itemCode'] ?? data['code'] ?? '').toString(),
+      mainCategory: ResourceTaxonomy.normalizeMainCategory(
+        data['mainCategory']?.toString(),
+      ),
+      subCategory: (data['subCategory'] ?? '').toString(),
+      itemType: (data['itemType'] ?? '').toString(),
+      totalQuantity: _asInt(data['totalQuantity'], fallback: 1),
+      availableQuantity: _asInt(data['availableQuantity'], fallback: 1),
+      description: (data['description'] ?? '').toString(),
+      imageUrl: data['imageUrl']?.toString(),
+      createdAt: createdAt,
+    );
+  }
+
+  static int _asInt(Object? value, {required int fallback}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
 }
 
-// Main Categories
-const String generalLearningResources = 'General Learning Resources';
-const String ictResources = 'ICT Resources';
-const String tvlResources = 'TVL Resources';
+/// Category taxonomy and lookup helpers for filters and forms.
+class ResourceTaxonomy {
+  ResourceTaxonomy._();
 
-// Sub-Categories for General Learning Resources
-const String generalLearning = 'General Learning';
-const String scienceLab = 'Science Lab';
-const String mathematics = 'Mathematics';
-const String audioVisual = 'Audio-Visual';
-const String sports = 'Sports';
-const String artsDesign = 'Arts & Design';
+  static const String filterAll = 'All';
 
-// Sub-Categories for ICT Resources
-const String generalInfrastructure = 'General & Infrastructure';
-const String vocationalTechnicalTools = 'Vocational & Technical Tools';
+  static const String mainCategoryGeneralLearning = 'General Learning';
+  static const String mainCategoryIct = 'ICT';
+  static const String mainCategoryTvl = 'TVL';
 
-// Sub-Categories for TVL Resources
-const String homeEconomics = 'Home Economics';
-const String industrialArts = 'Industrial Arts';
-const String agriFisheryArts = 'Agri-Fishery Arts';
+  static const List<String> mainCategories = [
+    mainCategoryGeneralLearning,
+    mainCategoryIct,
+    mainCategoryTvl,
+  ];
 
-// Tier 3: Item Types for General Learning Resources
+  // Sub-Categories for General Learning
+  static const String generalLearning = 'General Learning';
+  static const String scienceLab = 'Science Lab';
+  static const String mathematics = 'Mathematics';
+  static const String audioVisual = 'Audio-Visual';
+  static const String sports = 'Sports';
+  static const String artsDesign = 'Arts & Design';
+
+  // Sub-Categories for ICT
+  static const String generalInfrastructure = 'General & Infrastructure';
+  static const String vocationalTechnicalTools = 'Vocational & Technical Tools';
+
+  // Sub-Categories for TVL
+  static const String homeEconomics = 'Home Economics';
+  static const String industrialArts = 'Industrial Arts';
+  static const String agriFisheryArts = 'Agri-Fishery Arts';
+
+  static String normalizeMainCategory(String? value) {
+    final normalized = (value ?? '').trim();
+    switch (normalized.toLowerCase()) {
+      case 'general learning':
+      case 'general learning resources':
+        return mainCategoryGeneralLearning;
+      case 'ict':
+      case 'ict resources':
+        return mainCategoryIct;
+      case 'tvl':
+      case 'tvl resources':
+        return mainCategoryTvl;
+      default:
+        return normalized.isEmpty ? mainCategoryGeneralLearning : normalized;
+    }
+  }
+
+  static IconData iconForMainCategory(String mainCategory) {
+    switch (normalizeMainCategory(mainCategory)) {
+      case mainCategoryIct:
+        return Icons.computer_outlined;
+      case mainCategoryTvl:
+        return Icons.engineering_outlined;
+      case mainCategoryGeneralLearning:
+      default:
+        return Icons.menu_book_outlined;
+    }
+  }
+
+  static List<String> subCategoriesFor(String mainCategory) {
+    switch (normalizeMainCategory(mainCategory)) {
+      case mainCategoryGeneralLearning:
+        return const [
+          generalLearning,
+          scienceLab,
+          mathematics,
+          audioVisual,
+          sports,
+          artsDesign,
+        ];
+      case mainCategoryIct:
+        return const [generalInfrastructure, vocationalTechnicalTools];
+      case mainCategoryTvl:
+        return const [homeEconomics, industrialArts, agriFisheryArts];
+      default:
+        return const [];
+    }
+  }
+
+  static List<String> filterSubCategories(String mainCategory) {
+    if (mainCategory == filterAll) {
+      return [
+        filterAll,
+        generalLearning,
+        scienceLab,
+        mathematics,
+        audioVisual,
+        sports,
+        artsDesign,
+        generalInfrastructure,
+        vocationalTechnicalTools,
+        homeEconomics,
+        industrialArts,
+        agriFisheryArts,
+      ];
+    }
+    return [filterAll, ...subCategoriesFor(mainCategory)];
+  }
+
+  static List<String> itemTypesForSubCategory(String subCategory) {
+    switch (subCategory) {
+      case generalLearning:
+        return generalLearningItemTypes;
+      case scienceLab:
+        return scienceLabItemTypes;
+      case mathematics:
+        return mathematicsItemTypes;
+      case audioVisual:
+        return audioVisualItemTypes;
+      case sports:
+        return sportsItemTypes;
+      case artsDesign:
+        return artsDesignItemTypes;
+      case generalInfrastructure:
+        return generalInfrastructureItemTypes;
+      case vocationalTechnicalTools:
+        return vocationalTechnicalItemTypes;
+      case homeEconomics:
+        return homeEconomicsItemTypes;
+      case industrialArts:
+        return industrialArtsItemTypes;
+      case agriFisheryArts:
+        return agriFisheryArtsItemTypes;
+      default:
+        return const [];
+    }
+  }
+
+  static List<String> filterItemTypes({
+    required String mainCategory,
+    required String subCategory,
+  }) {
+    if (subCategory != filterAll) {
+      return [filterAll, ...itemTypesForSubCategory(subCategory)];
+    }
+
+    if (mainCategory == filterAll) {
+      return [
+        filterAll,
+        ...generalLearningItemTypes,
+        ...scienceLabItemTypes,
+        ...mathematicsItemTypes,
+        ...audioVisualItemTypes,
+        ...sportsItemTypes,
+        ...artsDesignItemTypes,
+        ...generalInfrastructureItemTypes,
+        ...vocationalTechnicalItemTypes,
+        ...homeEconomicsItemTypes,
+        ...industrialArtsItemTypes,
+        ...agriFisheryArtsItemTypes,
+      ];
+    }
+
+    final subCats = subCategoriesFor(mainCategory);
+    final types = <String>{};
+    for (final sub in subCats) {
+      types.addAll(itemTypesForSubCategory(sub));
+    }
+    return [filterAll, ...types];
+  }
+}
+
+// Legacy sub-category aliases for existing screens.
+const String generalLearning = ResourceTaxonomy.generalLearning;
+const String scienceLab = ResourceTaxonomy.scienceLab;
+const String mathematics = ResourceTaxonomy.mathematics;
+const String audioVisual = ResourceTaxonomy.audioVisual;
+const String sports = ResourceTaxonomy.sports;
+const String artsDesign = ResourceTaxonomy.artsDesign;
+const String generalInfrastructure = ResourceTaxonomy.generalInfrastructure;
+const String vocationalTechnicalTools = ResourceTaxonomy.vocationalTechnicalTools;
+const String homeEconomics = ResourceTaxonomy.homeEconomics;
+const String industrialArts = ResourceTaxonomy.industrialArts;
+const String agriFisheryArts = ResourceTaxonomy.agriFisheryArts;
+
+// Legacy aliases for borrower screens.
+const String generalLearningResources = ResourceTaxonomy.mainCategoryGeneralLearning;
+const String ictResources = ResourceTaxonomy.mainCategoryIct;
+const String tvlResources = ResourceTaxonomy.mainCategoryTvl;
+
 const List<String> generalLearningItemTypes = [
   'Textbooks',
   'Library Books',
@@ -110,7 +313,6 @@ const List<String> artsDesignItemTypes = [
   'Artwork Drying Racks',
 ];
 
-// Tier 3: Item Types for ICT Resources
 const List<String> generalInfrastructureItemTypes = [
   'Desktop Computers',
   'Laptops',
@@ -129,7 +331,6 @@ const List<String> vocationalTechnicalItemTypes = [
   'Electronics Kits',
 ];
 
-// Tier 3: Item Types for TVL Resources
 const List<String> homeEconomicsItemTypes = [
   'Sewing Machines',
   'Cooking Equipment',
@@ -159,65 +360,6 @@ const List<String> agriFisheryArtsItemTypes = [
   'Agricultural Safety Wear',
 ];
 
-// Helper function to get item types based on sub-category
 List<String> getItemTypesForSubCategory(String subCategory) {
-  switch (subCategory) {
-    case generalLearning:
-      return generalLearningItemTypes;
-    case scienceLab:
-      return scienceLabItemTypes;
-    case mathematics:
-      return mathematicsItemTypes;
-    case audioVisual:
-      return audioVisualItemTypes;
-    case sports:
-      return sportsItemTypes;
-    case artsDesign:
-      return artsDesignItemTypes;
-    case generalInfrastructure:
-      return generalInfrastructureItemTypes;
-    case vocationalTechnicalTools:
-      return vocationalTechnicalItemTypes;
-    case homeEconomics:
-      return homeEconomicsItemTypes;
-    case industrialArts:
-      return industrialArtsItemTypes;
-    case agriFisheryArts:
-      return agriFisheryArtsItemTypes;
-    default:
-      return [];
-  }
+  return ResourceTaxonomy.itemTypesForSubCategory(subCategory);
 }
-
-// Resource items data
-List<ResourceItem> allResourceItems = [
-  // Biology Microscope (General Learning Resources -> Science Laboratory)
-  ResourceItem(
-    name: 'Biology Microscope',
-    code: 'GLR-BIO-001',
-    mainCategory: generalLearningResources,
-    subCategory: scienceLab,
-    itemType: 'Biology Equipment',
-    description: 'High-quality biological microscope for laboratory use.',
-    assetPath: 'lib/assets/borrowed_assets/Biology Microscope.png',
-    fallbackIcon: Icons.biotech_outlined,
-    totalQuantity: 10,
-    availableQuantity: 7,
-    borrowedQuantity: 3,
-  ),
-
-  // Dell Laptop (ICT Resources -> General & Infrastructure Equipment)
-  ResourceItem(
-    name: 'Dell Laptop',
-    code: 'ICT-LPT-001',
-    mainCategory: ictResources,
-    subCategory: generalInfrastructure,
-    itemType: 'Laptops',
-    description: 'Dell laptop computer for student and teacher use.',
-    assetPath: 'lib/assets/borrowed_assets/Dell Laptop.png',
-    fallbackIcon: Icons.laptop_mac_outlined,
-    totalQuantity: 15,
-    availableQuantity: 12,
-    borrowedQuantity: 3,
-  ),
-];
