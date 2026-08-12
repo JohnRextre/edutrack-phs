@@ -150,6 +150,8 @@ class AuthService {
         'fullName': trimmedName,
         'email': trimmedEmail,
         'role': firestoreRoleLabel(role),
+        'departmentOrSection': '',
+        'status': 'Active',
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -283,14 +285,26 @@ class AuthService {
         case 'invalid-name':
         case 'invalid-school-id':
           return error.message ?? 'Please complete all required fields.';
+        case 'firebase-unavailable':
+          return error.message ??
+              'Firebase is not configured. Please try again later.';
+        case 'admin-protected':
+          return error.message ??
+              'This admin account is protected and cannot be modified.';
         case 'network-request-failed':
           return 'A network problem prevented the request. Please try again.';
+        case 'requires-recent-login':
+          return 'Please re-enter the current password and try again.';
         default:
           return error.message ?? 'Something went wrong. Please try again.';
       }
     }
 
     if (error is FirebaseException) {
+      if (error.code == 'admin-protected') {
+        return error.message ??
+            'This admin account is protected and cannot be modified.';
+      }
       return error.message ?? 'A Firebase error occurred.';
     }
 

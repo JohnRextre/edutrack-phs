@@ -1,4 +1,12 @@
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../models/account_role.dart';
+import '../services/auth_service.dart';
+import '../services/user_service.dart';
 
 enum UserRole {
   student('Student', Icons.school_outlined),
@@ -9,6 +17,34 @@ enum UserRole {
   const UserRole(this.label, this.icon);
   final String label;
   final IconData icon;
+
+  AccountRole get accountRole {
+    switch (this) {
+      case UserRole.student:
+        return AccountRole.student;
+      case UserRole.teacher:
+        return AccountRole.teacher;
+      case UserRole.custodian:
+        return AccountRole.propertyCustodian;
+      case UserRole.ictCoordinator:
+        return AccountRole.ictCoordinator;
+    }
+  }
+
+  static UserRole fromLabel(String? value) {
+    final role = AuthService.roleFromString(value);
+    switch (role) {
+      case 'Teacher':
+        return UserRole.teacher;
+      case 'Property Custodian':
+        return UserRole.custodian;
+      case 'ICT Coordinator':
+        return UserRole.ictCoordinator;
+      case 'Student':
+      default:
+        return UserRole.student;
+    }
+  }
 }
 
 enum AccountStatus {
@@ -19,26 +55,147 @@ enum AccountStatus {
   const AccountStatus(this.label, this.color);
   final String label;
   final Color color;
+
+  static AccountStatus fromLabel(String? value) {
+    switch ((value ?? '').trim().toLowerCase()) {
+      case 'inactive':
+        return AccountStatus.inactive;
+      case 'suspended':
+        return AccountStatus.suspended;
+      case 'active':
+      default:
+        return AccountStatus.active;
+    }
+  }
 }
 
 class UserAccount {
   const UserAccount({
-    required this.id,
+    required this.uid,
+    required this.schoolId,
     required this.fullName,
     required this.email,
     required this.role,
     required this.status,
     required this.department,
+    this.statusReason,
     this.avatarColor,
   });
 
-  final String id;
+  final String uid;
+  final String schoolId;
   final String fullName;
   final String email;
   final UserRole role;
   final AccountStatus status;
   final String department;
+  final String? statusReason;
   final Color? avatarColor;
+
+  /// Prefer school ID in list search; fall back to uid.
+  String get displayId => schoolId.isNotEmpty ? schoolId : uid;
+
+  factory UserAccount.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? <String, dynamic>{};
+    final fullName = (data['fullName'] ?? data['name'] ?? '').toString();
+    final schoolId = (data['schoolId'] ?? '').toString();
+    final email = (data['email'] ?? '').toString();
+    final department = (data['departmentOrSection'] ??
+            data['department'] ??
+            data['section'] ??
+            '')
+        .toString();
+    final uid = (data['uid'] ?? doc.id).toString();
+    final statusReason = data['statusReason']?.toString();
+
+    return UserAccount(
+      uid: uid,
+      schoolId: schoolId,
+      fullName: fullName.isEmpty ? 'Unnamed User' : fullName,
+      email: email,
+      role: UserRole.fromLabel(data['role']?.toString()),
+      status: AccountStatus.fromLabel(data['status']?.toString()),
+      department: department.isEmpty ? '—' : department,
+      statusReason: statusReason,
+      avatarColor: _avatarColorFor(uid.isNotEmpty ? uid : fullName),
+    );
+  }
+}
+
+Color _avatarColorFor(String seed) {
+  const palette = <Color>[
+    Colors.blue,
+    Colors.purple,
+    Colors.orange,
+    Colors.teal,
+    Colors.indigo,
+    Colors.pink,
+    Colors.cyan,
+    Colors.deepOrange,
+  ];
+  if (seed.isEmpty) return palette.first;
+  return palette[seed.hashCode.abs() % palette.length];
+}
+
+String _initialsFor(String name) {
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length >= 2) {
+    final first = parts[0][0];
+    final second = parts[1][0];
+    return '$first$second'.toUpperCase();
+  }
+  final single = parts[0];
+  return single.substring(0, math.min(2, single.length)).toUpperCase();
+}
+
+bool _isValidEmail(String value) {
+  final email = value.trim();
+  if (email.isEmpty) return false;
+  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+}
+
+/// Roles that can be assigned from User Management (ICT Coordinator excluded).
+const _assignableRoles = <UserRole>[
+  UserRole.student,
+  UserRole.teacher,
+  UserRole.custodian,
+];
+
+bool _isIctCoordinator(UserAccount user) =>
+    user.role == UserRole.ictCoordinator;
+
+Widget _adminProtectionBanner(BuildContext context, {required String message}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.amber.shade50,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: Colors.amber.shade200),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.shield_outlined, color: Colors.amber.shade800, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            message,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.amber.shade900,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class AdminUserManagementScreen extends StatefulWidget {
@@ -51,371 +208,539 @@ class AdminUserManagementScreen extends StatefulWidget {
 
 class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final UserService _userService = UserService();
+
   UserRole? _selectedRoleFilter;
   AccountStatus? _statusFilter;
 
-  // Sample data - in real app, this would come from a database/service
-  final List<UserAccount> _allUsers = [
-    UserAccount(
-      id: 'USR-001',
-      fullName: 'John Rexter',
-      email: 'john.rexter@school.edu',
-      role: UserRole.student,
-      status: AccountStatus.active,
-      department: 'Grade 11 STEM',
-      avatarColor: Colors.blue,
-    ),
-    UserAccount(
-      id: 'USR-002',
-      fullName: 'Maria Santos',
-      email: 'maria.santos@school.edu',
-      role: UserRole.teacher,
-      status: AccountStatus.active,
-      department: 'Science Dept',
-      avatarColor: Colors.purple,
-    ),
-    UserAccount(
-      id: 'USR-003',
-      fullName: 'Pedro Reyes',
-      email: 'pedro.reyes@school.edu',
-      role: UserRole.custodian,
-      status: AccountStatus.active,
-      department: 'Property Management',
-      avatarColor: Colors.orange,
-    ),
-    UserAccount(
-      id: 'USR-004',
-      fullName: 'Ana Garcia',
-      email: 'ana.garcia@school.edu',
-      role: UserRole.student,
-      status: AccountStatus.inactive,
-      department: 'Grade 12 ABM',
-      avatarColor: Colors.teal,
-    ),
-    UserAccount(
-      id: 'USR-005',
-      fullName: 'Carlos Mendoza',
-      email: 'carlos.mendoza@school.edu',
-      role: UserRole.ictCoordinator,
-      status: AccountStatus.active,
-      department: 'ICT Department',
-      avatarColor: Colors.indigo,
-    ),
-  ];
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-  List<UserAccount> get _filteredUsers {
-    return _allUsers.where((user) {
-      // Search filter
-      final searchQuery = _searchController.text.toLowerCase();
+  List<UserAccount> _filterUsers(List<UserAccount> users) {
+    final searchQuery = _searchController.text.trim().toLowerCase();
+
+    return users.where((user) {
       if (searchQuery.isNotEmpty) {
         final matchesSearch =
             user.fullName.toLowerCase().contains(searchQuery) ||
             user.email.toLowerCase().contains(searchQuery) ||
-            user.id.toLowerCase().contains(searchQuery);
+            user.schoolId.toLowerCase().contains(searchQuery) ||
+            user.uid.toLowerCase().contains(searchQuery);
         if (!matchesSearch) return false;
       }
 
-      // Role filter
-      if (_selectedRoleFilter != null) {
-        if (user.role != _selectedRoleFilter) return false;
+      if (_selectedRoleFilter != null && user.role != _selectedRoleFilter) {
+        return false;
       }
 
-      // Status filter
-      if (_statusFilter != null) {
-        if (user.status != _statusFilter) return false;
+      if (_statusFilter != null && user.status != _statusFilter) {
+        return false;
       }
 
       return true;
     }).toList();
   }
 
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : null,
+      ),
+    );
+  }
+
+  /// Runs [action] after the current frame so popup routes can finish closing.
+  void _afterFrame(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      action();
+    });
+  }
+
+  void _disposeDialogControllers(List<TextEditingController> controllers) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final controller in controllers) {
+        controller.dispose();
+      }
+    });
+  }
+
   void _showAddUserModal() {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
+    final schoolIdController = TextEditingController();
     final emailController = TextEditingController();
     final departmentController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
     UserRole selectedRole = UserRole.student;
-    AccountStatus selectedStatus = AccountStatus.active;
+    var isSubmitting = false;
+    var obscurePassword = true;
+    var obscureConfirm = true;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.85,
-          ),
-          margin: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Add New User',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
+      builder: (modalContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          Future<void> submit() async {
+            if (isSubmitting) return;
+            if (!formKey.currentState!.validate()) return;
+
+            setModalState(() => isSubmitting = true);
+            try {
+              await _userService.createUser(
+                fullName: nameController.text,
+                schoolId: schoolIdController.text,
+                email: emailController.text,
+                role: selectedRole.accountRole,
+                password: passwordController.text,
+                departmentOrSection: departmentController.text,
+              );
+
+              if (!modalContext.mounted) return;
+              final successMessage =
+                  'User "${nameController.text.trim()}" created successfully!';
+              Navigator.pop(modalContext);
+              _showSnackBar(successMessage);
+            } on FirebaseAuthException catch (error) {
+              if (modalContext.mounted) {
+                setModalState(() => isSubmitting = false);
+              }
+              _showSnackBar(
+                AuthService.friendlyErrorMessage(error),
+                isError: true,
+              );
+            } catch (error) {
+              if (modalContext.mounted) {
+                setModalState(() => isSubmitting = false);
+              }
+              _showSnackBar(
+                AuthService.friendlyErrorMessage(error),
+                isError: true,
+              );
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.9,
               ),
-              // Form
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Full Name
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Full Name *',
-                          border: OutlineInputBorder(),
+              margin: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Add New User',
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Email
-                      TextField(
-                        controller: emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email Address / User ID *',
-                          border: OutlineInputBorder(),
+                        IconButton(
+                          onPressed: isSubmitting
+                              ? null
+                              : () => Navigator.pop(modalContext),
+                          icon: const Icon(Icons.close),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Role Dropdown
-                      DropdownButtonFormField<UserRole>(
-                        value: selectedRole,
-                        decoration: const InputDecoration(
-                          labelText: 'System Role *',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: UserRole.values.map((role) {
-                          return DropdownMenuItem(
-                            value: role,
-                            child: Row(
-                              children: [
-                                Icon(role.icon, size: 20),
-                                const SizedBox(width: 8),
-                                Text(role.label),
-                              ],
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: Form(
+                        key: formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextFormField(
+                              controller: nameController,
+                              textCapitalization: TextCapitalization.words,
+                              enabled: !isSubmitting,
+                              decoration: const InputDecoration(
+                                labelText: 'Full Name *',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Full name is required.';
+                                }
+                                return null;
+                              },
                             ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setModalState(() {
-                              selectedRole = value;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Department
-                      TextField(
-                        controller: departmentController,
-                        decoration: const InputDecoration(
-                          labelText: 'Grade/Section or Department (Optional)',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Status
-                      DropdownButtonFormField<AccountStatus>(
-                        value: selectedStatus,
-                        decoration: const InputDecoration(
-                          labelText: 'Account Status',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: AccountStatus.values.map((status) {
-                          return DropdownMenuItem(
-                            value: status,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: status.color,
-                                    shape: BoxShape.circle,
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: schoolIdController,
+                              enabled: !isSubmitting,
+                              decoration: const InputDecoration(
+                                labelText: 'School ID *',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'School ID is required.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              enabled: !isSubmitting,
+                              decoration: const InputDecoration(
+                                labelText: 'Email Address *',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Email address is required.';
+                                }
+                                if (!_isValidEmail(value)) {
+                                  return 'Enter a valid email address.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<UserRole>(
+                              value: selectedRole,
+                              decoration: const InputDecoration(
+                                labelText: 'System Role *',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: _assignableRoles.map((role) {
+                                return DropdownMenuItem(
+                                  value: role,
+                                  child: Row(
+                                    children: [
+                                      Icon(role.icon, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(role.label),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: isSubmitting
+                                  ? null
+                                  : (value) {
+                                      if (value != null) {
+                                        setModalState(() {
+                                          selectedRole = value;
+                                        });
+                                      }
+                                    },
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: departmentController,
+                              enabled: !isSubmitting,
+                              decoration: const InputDecoration(
+                                labelText:
+                                    'Grade/Section or Department (Optional)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: passwordController,
+                              obscureText: obscurePassword,
+                              enabled: !isSubmitting,
+                              decoration: InputDecoration(
+                                labelText: 'Password *',
+                                border: const OutlineInputBorder(),
+                                helperText: 'Minimum 6 characters',
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setModalState(() {
+                                      obscurePassword = !obscurePassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Text(status.label),
-                              ],
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Password is required.';
+                                }
+                                if (value.length < 6) {
+                                  return 'Password must be at least 6 characters.';
+                                }
+                                return null;
+                              },
                             ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setModalState(() {
-                              selectedStatus = value;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
-              ),
-              // Action Buttons
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () {
-                          if (nameController.text.trim().isEmpty ||
-                              emailController.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please fill in all required fields.',
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: confirmPasswordController,
+                              obscureText: obscureConfirm,
+                              enabled: !isSubmitting,
+                              decoration: InputDecoration(
+                                labelText: 'Confirm Password *',
+                                border: const OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setModalState(() {
+                                      obscureConfirm = !obscureConfirm;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    obscureConfirm
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                  ),
                                 ),
                               ),
-                            );
-                            return;
-                          }
-
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'User "${nameController.text.trim()}" created successfully!',
-                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please confirm the password.';
+                                }
+                                if (value != passwordController.text) {
+                                  return 'Passwords do not match.';
+                                }
+                                return null;
+                              },
                             ),
-                          );
-                        },
-                        child: const Text('Create User'),
+                            const SizedBox(height: 12),
+                            Text(
+                              'New accounts are created with Active status by default.',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.pop(modalContext),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: isSubmitting ? null : submit,
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text('Create User'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      _disposeDialogControllers([
+        nameController,
+        schoolIdController,
+        emailController,
+        departmentController,
+        passwordController,
+        confirmPasswordController,
+      ]);
+    });
   }
 
   void _showEditUserDialog(UserAccount user) {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: user.fullName);
+    final schoolIdController = TextEditingController(text: user.schoolId);
     final emailController = TextEditingController(text: user.email);
-    final departmentController = TextEditingController(text: user.department);
-    UserRole selectedRole = user.role;
-    AccountStatus selectedStatus = user.status;
+    var isSaving = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit User Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit User Details'),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      enabled: !isSaving,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Full Name *',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Full name is required.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: schoolIdController,
+                      enabled: !isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'School ID *',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'School ID is required.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: emailController,
+                      enabled: !isSaving,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Email Address *',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Email address is required.';
+                        }
+                        if (!_isValidEmail(value)) {
+                          return 'Enter a valid email address.';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<UserRole>(
-                value: selectedRole,
-                decoration: const InputDecoration(
-                  labelText: 'Role',
-                  border: OutlineInputBorder(),
-                ),
-                items: UserRole.values.map((role) {
-                  return DropdownMenuItem(value: role, child: Text(role.label));
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    selectedRole = value;
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: departmentController,
-                decoration: const InputDecoration(
-                  labelText: 'Department',
-                  border: OutlineInputBorder(),
-                ),
+              FilledButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        setDialogState(() => isSaving = true);
+                        try {
+                          await _userService.updateUserDetails(
+                            uid: user.uid,
+                            fullName: nameController.text,
+                            schoolId: schoolIdController.text,
+                            email: emailController.text,
+                          );
+                          if (!dialogContext.mounted) return;
+                          final successMessage =
+                              'User "${nameController.text.trim()}" updated.';
+                          Navigator.pop(dialogContext);
+                          _showSnackBar(successMessage);
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => isSaving = false);
+                          }
+                          _showSnackBar(
+                            AuthService.friendlyErrorMessage(error),
+                            isError: true,
+                          );
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('User "${nameController.text}" updated.'),
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      _disposeDialogControllers([
+        nameController,
+        schoolIdController,
+        emailController,
+      ]);
+    });
   }
 
   void _showChangeRoleDialog(UserAccount user) {
-    UserRole selectedRole = user.role;
+    final isProtectedAdmin = _isIctCoordinator(user);
+    UserRole selectedRole = isProtectedAdmin
+        ? user.role
+        : (_assignableRoles.contains(user.role)
+            ? user.role
+            : UserRole.student);
+    var isSaving = false;
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
           title: Text('Change Role - ${user.fullName}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (isProtectedAdmin) ...[
+                _adminProtectionBanner(
+                  context,
+                  message:
+                      'ICT Coordinator (Admin) role cannot be changed. '
+                      'Primary admin accounts are protected.',
+                ),
+                const SizedBox(height: 16),
+              ],
               Text(
                 'Current role: ${user.role.label}',
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -427,7 +752,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   labelText: 'New Role',
                   border: OutlineInputBorder(),
                 ),
-                items: UserRole.values.map((role) {
+                items: _assignableRoles.map((role) {
                   return DropdownMenuItem(
                     value: role,
                     child: Row(
@@ -439,34 +764,55 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     ),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      selectedRole = value;
-                    });
-                  }
-                },
+                onChanged: isProtectedAdmin || isSaving
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setDialogState(() => selectedRole = value);
+                        }
+                      },
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Role changed to ${selectedRole.label} for ${user.fullName}.',
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Update Role'),
-            ),
+            if (!isProtectedAdmin)
+              FilledButton(
+                onPressed: isSaving || selectedRole == user.role
+                    ? null
+                    : () async {
+                        setDialogState(() => isSaving = true);
+                        try {
+                          await _userService.updateUserRole(
+                            uid: user.uid,
+                            role: selectedRole.accountRole,
+                          );
+                          if (!dialogContext.mounted) return;
+                          final successMessage =
+                              'Role changed to ${selectedRole.label} for ${user.fullName}.';
+                          Navigator.pop(dialogContext);
+                          _showSnackBar(successMessage);
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => isSaving = false);
+                          }
+                          _showSnackBar(
+                            AuthService.friendlyErrorMessage(error),
+                            isError: true,
+                          );
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Update Role'),
+              ),
           ],
         ),
       ),
@@ -474,72 +820,193 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   }
 
   void _showResetPasswordDialog(UserAccount user) {
-    final passwordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
+    var isSubmitting = false;
+    var obscureCurrent = true;
+    var obscureNew = true;
+    var obscureConfirm = true;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Reset Password - ${user.fullName}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Enter new password for this user.'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'New Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: confirmPasswordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirm Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (passwordController.text != confirmPasswordController.text) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Passwords do not match.')),
-                );
-                return;
-              }
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> submit() async {
+            if (isSubmitting) return;
+            if (!formKey.currentState!.validate()) return;
 
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Password reset successfully for ${user.fullName}.',
-                  ),
-                ),
+            setDialogState(() => isSubmitting = true);
+            try {
+              await _userService.resetUserPassword(
+                email: user.email,
+                currentPassword: currentPasswordController.text,
+                newPassword: newPasswordController.text,
               );
-            },
-            child: const Text('Reset Password'),
-          ),
-        ],
+              if (!dialogContext.mounted) return;
+              final successMessage = 'Password updated for ${user.fullName}.';
+              Navigator.pop(dialogContext);
+              _showSnackBar(successMessage);
+            } catch (error) {
+              if (dialogContext.mounted) {
+                setDialogState(() => isSubmitting = false);
+              }
+              _showSnackBar(
+                AuthService.friendlyErrorMessage(error),
+                isError: true,
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: Text('Reset Password - ${user.fullName}'),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enter the user\'s current password to verify the account, '
+                      'then set a new password.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: currentPasswordController,
+                      obscureText: obscureCurrent,
+                      enabled: !isSubmitting,
+                      decoration: InputDecoration(
+                        labelText: 'Current Password *',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              obscureCurrent = !obscureCurrent;
+                            });
+                          },
+                          icon: Icon(
+                            obscureCurrent
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Current password is required.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: newPasswordController,
+                      obscureText: obscureNew,
+                      enabled: !isSubmitting,
+                      decoration: InputDecoration(
+                        labelText: 'New Password *',
+                        border: const OutlineInputBorder(),
+                        helperText: 'Minimum 6 characters',
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              obscureNew = !obscureNew;
+                            });
+                          },
+                          icon: Icon(
+                            obscureNew
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'New password is required.';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: confirmPasswordController,
+                      obscureText: obscureConfirm,
+                      enabled: !isSubmitting,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm New Password *',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              obscureConfirm = !obscureConfirm;
+                            });
+                          },
+                          icon: Icon(
+                            obscureConfirm
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please confirm the new password.';
+                        }
+                        if (value != newPasswordController.text) {
+                          return 'Passwords do not match.';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSubmitting ? null : submit,
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Update Password'),
+              ),
+            ],
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      _disposeDialogControllers([
+        currentPasswordController,
+        newPasswordController,
+        confirmPasswordController,
+      ]);
+    });
   }
 
   void _showDeleteConfirmation(UserAccount user) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         icon: Icon(
           Icons.warning_amber_rounded,
           color: Colors.red[700],
@@ -547,93 +1014,182 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
         ),
         title: const Text('Delete Account'),
         content: Text(
-          'Are you sure you want to delete the account for "${user.fullName}"?\n\n'
-          'This action cannot be undone.',
+          'Deleting "${user.fullName}" from Authentication requires Firebase Admin privileges.\n\n'
+          'You can set the account status to Inactive or Suspended instead to block access in the app.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Account for "${user.fullName}" deleted.'),
-                ),
-              );
+              Navigator.pop(dialogContext);
+              _afterFrame(() => _showUpdateStatusDialog(user));
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: const Text('Update Status Instead'),
           ),
         ],
       ),
     );
   }
 
-  void _toggleUserStatus(UserAccount user) {
-    final newStatus = user.status == AccountStatus.active
-        ? AccountStatus.inactive
-        : AccountStatus.active;
+  void _showUpdateStatusDialog(UserAccount user) {
+    final isProtectedAdmin = _isIctCoordinator(user);
+    AccountStatus selectedStatus = user.status;
+    final reasonController = TextEditingController(
+      text: user.statusReason ?? '',
+    );
+    var isSaving = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          newStatus == AccountStatus.active ? 'Reactivate' : 'Deactivate',
-        ),
-        content: Text(
-          '${newStatus == AccountStatus.active ? 'Reactivate' : 'Deactivate'} account for "${user.fullName}"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Account ${newStatus == AccountStatus.active ? 'reactivated' : 'deactivated'} for "${user.fullName}".',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Change Account Status'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isProtectedAdmin) ...[
+                    _adminProtectionBanner(
+                      context,
+                      message:
+                          'ICT Coordinator (Admin) account status cannot be altered.',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    user.fullName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              );
-            },
-            child: Text(
-              newStatus == AccountStatus.active ? 'Reactivate' : 'Deactivate',
+                  const SizedBox(height: 12),
+                  Text(
+                    'Current Status',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  _StatusBadge(status: user.status),
+                  if (!isProtectedAdmin) ...[
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<AccountStatus>(
+                      value: selectedStatus,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Status',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: AccountStatus.values.map((status) {
+                        return DropdownMenuItem(
+                          value: status,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: status.color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(status.label),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: isSaving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setDialogState(() => selectedStatus = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: reasonController,
+                      enabled: !isSaving,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason / Remarks (Optional)',
+                        hintText:
+                            'e.g., Graduated, Rule violation, Transferred',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                child: Text(isProtectedAdmin ? 'Close' : 'Cancel'),
+              ),
+              if (!isProtectedAdmin)
+                FilledButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() => isSaving = true);
+                          try {
+                            await _userService.updateAccountStatus(
+                              uid: user.uid,
+                              status: selectedStatus.label,
+                              statusReason: reasonController.text,
+                            );
+                            if (!dialogContext.mounted) return;
+                            final successMessage =
+                                'Account status updated to ${selectedStatus.label} for ${user.fullName}.';
+                            Navigator.pop(dialogContext);
+                            _showSnackBar(successMessage);
+                          } catch (error) {
+                            if (dialogContext.mounted) {
+                              setDialogState(() => isSaving = false);
+                            }
+                            _showSnackBar(
+                              AuthService.friendlyErrorMessage(error),
+                              isError: true,
+                            );
+                          }
+                        },
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save Status'),
+                ),
+            ],
+          );
+        },
       ),
-    );
-  }
-
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, min(2, name.length)).toUpperCase();
+    ).whenComplete(() {
+      _disposeDialogControllers([reasonController]);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredUsers = _filteredUsers;
-
     return Scaffold(
       appBar: AppBar(title: const Text('User Management')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Search by name, email, or ID...',
+              hintText: 'Search by name, email, or School ID...',
               leading: const Icon(Icons.search),
               trailing: [
                 if (_searchController.text.isNotEmpty)
@@ -645,25 +1201,20 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     icon: const Icon(Icons.clear),
                   ),
               ],
-              onChanged: (value) => setState(() {}),
+              onChanged: (_) => setState(() {}),
             ),
           ),
-
-          // Filter Chips
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  // Role Filters
                   FilterChip(
                     label: const Text('All Users'),
                     selected: _selectedRoleFilter == null,
-                    onSelected: (selected) {
-                      setState(() {
-                        _selectedRoleFilter = null;
-                      });
+                    onSelected: (_) {
+                      setState(() => _selectedRoleFilter = null);
                     },
                   ),
                   const SizedBox(width: 8),
@@ -715,7 +1266,6 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     },
                   ),
                   const SizedBox(width: 8),
-                  // Status Filter
                   FilterChip(
                     label: Text(
                       _statusFilter == null
@@ -725,7 +1275,20 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     selected: _statusFilter != null,
                     onSelected: (selected) {
                       setState(() {
-                        _statusFilter = selected ? AccountStatus.active : null;
+                        if (!selected) {
+                          _statusFilter = null;
+                          return;
+                        }
+                        // Cycle Active → Inactive → Suspended → clear
+                        if (_statusFilter == null) {
+                          _statusFilter = AccountStatus.active;
+                        } else if (_statusFilter == AccountStatus.active) {
+                          _statusFilter = AccountStatus.inactive;
+                        } else if (_statusFilter == AccountStatus.inactive) {
+                          _statusFilter = AccountStatus.suspended;
+                        } else {
+                          _statusFilter = null;
+                        }
                       });
                     },
                     selectedColor:
@@ -738,11 +1301,51 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Users List
           Expanded(
-            child: filteredUsers.isEmpty
-                ? const Center(
+            child: StreamBuilder<
+                List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+              stream: _userService.watchUsers(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_off_outlined,
+                            size: 48,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Unable to load users.\n${AuthService.friendlyErrorMessage(snapshot.error!)}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data ?? const [];
+                final allUsers = docs
+                    .map(UserAccount.fromFirestore)
+                    .toList(growable: false);
+                final filteredUsers = _filterUsers(allUsers);
+
+                if (filteredUsers.isEmpty) {
+                  return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: Text(
@@ -750,25 +1353,33 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                         style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: filteredUsers.length,
-                    itemBuilder: (context, index) {
-                      final user = filteredUsers[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _UserCard(
-                          user: user,
-                          onEdit: () => _showEditUserDialog(user),
-                          onChangeRole: () => _showChangeRoleDialog(user),
-                          onResetPassword: () => _showResetPasswordDialog(user),
-                          onToggleStatus: () => _toggleUserStatus(user),
-                          onDelete: () => _showDeleteConfirmation(user),
-                        ),
-                      );
-                    },
-                  ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: filteredUsers.length,
+                  itemBuilder: (context, index) {
+                    final user = filteredUsers[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _UserCard(
+                        user: user,
+                        onEdit: () => _afterFrame(() => _showEditUserDialog(user)),
+                        onChangeRole: () =>
+                            _afterFrame(() => _showChangeRoleDialog(user)),
+                        onResetPassword: () =>
+                            _afterFrame(() => _showResetPasswordDialog(user)),
+                        onUpdateStatus: () =>
+                            _afterFrame(() => _showUpdateStatusDialog(user)),
+                        onDelete: () =>
+                            _afterFrame(() => _showDeleteConfirmation(user)),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -781,13 +1392,38 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   }
 }
 
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+
+  final AccountStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: status.color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          color: status.color,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+}
+
 class _UserCard extends StatelessWidget {
   const _UserCard({
     required this.user,
     required this.onEdit,
     required this.onChangeRole,
     required this.onResetPassword,
-    required this.onToggleStatus,
+    required this.onUpdateStatus,
     required this.onDelete,
   });
 
@@ -795,7 +1431,7 @@ class _UserCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onChangeRole;
   final VoidCallback onResetPassword;
-  final VoidCallback onToggleStatus;
+  final VoidCallback onUpdateStatus;
   final VoidCallback onDelete;
 
   @override
@@ -816,12 +1452,11 @@ class _UserCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Avatar
               CircleAvatar(
                 backgroundColor:
                     user.avatarColor ?? colorScheme.primaryContainer,
                 child: Text(
-                  _getInitials(user.fullName),
+                  _initialsFor(user.fullName),
                   style: TextStyle(
                     color: colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.bold,
@@ -830,8 +1465,6 @@ class _UserCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-
-              // User Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -861,32 +1494,25 @@ class _UserCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (user.displayId.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        user.email.isNotEmpty
+                            ? '${user.displayId} · ${user.email}'
+                            : user.displayId,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
-
-              // Status Badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: user.status.color.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  user.status.label,
-                  style: TextStyle(
-                    color: user.status.color,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
+              _StatusBadge(status: user.status),
               const SizedBox(width: 8),
-
-              // Action Menu
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, size: 20),
                 onSelected: (value) {
@@ -900,80 +1526,102 @@ class _UserCard extends StatelessWidget {
                     case 'reset_password':
                       onResetPassword();
                       break;
-                    case 'toggle':
-                      onToggleStatus();
+                    case 'update_status':
+                      onUpdateStatus();
                       break;
                     case 'delete':
                       onDelete();
                       break;
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, size: 20),
-                        SizedBox(width: 8),
-                        Text('Edit User Details'),
-                      ],
+                itemBuilder: (context) {
+                  final isProtectedAdmin = _isIctCoordinator(user);
+                  return [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, size: 20),
+                          SizedBox(width: 8),
+                          Text('Edit User Details'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'change_role',
-                    child: Row(
-                      children: [
-                        Icon(Icons.admin_panel_settings, size: 20),
-                        SizedBox(width: 8),
-                        Text('Change Role / Permissions'),
-                      ],
+                    PopupMenuItem(
+                      value: 'change_role',
+                      enabled: !isProtectedAdmin,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.admin_panel_settings,
+                            size: 20,
+                            color: isProtectedAdmin
+                                ? Theme.of(context).disabledColor
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Change Role / Permissions',
+                            style: TextStyle(
+                              color: isProtectedAdmin
+                                  ? Theme.of(context).disabledColor
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'reset_password',
-                    child: Row(
-                      children: [
-                        Icon(Icons.lock_reset, size: 20),
-                        SizedBox(width: 8),
-                        Text('Reset Password'),
-                      ],
+                    const PopupMenuItem(
+                      value: 'reset_password',
+                      child: Row(
+                        children: [
+                          Icon(Icons.lock_reset, size: 20),
+                          SizedBox(width: 8),
+                          Text('Reset Password'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: 'toggle',
-                    child: Row(
-                      children: [
-                        Icon(
-                          user.status == AccountStatus.active
-                              ? Icons.toggle_off
-                              : Icons.toggle_on,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          user.status == AccountStatus.active
-                              ? 'Deactivate Account'
-                              : 'Reactivate Account',
-                        ),
-                      ],
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'update_status',
+                      enabled: !isProtectedAdmin,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.manage_accounts_outlined,
+                            size: 20,
+                            color: isProtectedAdmin
+                                ? Theme.of(context).disabledColor
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Update Account Status',
+                            style: TextStyle(
+                              color: isProtectedAdmin
+                                  ? Theme.of(context).disabledColor
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text(
-                          'Delete Account',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ],
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, size: 20, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete Account',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ];
+                },
               ),
             ],
           ),
@@ -981,14 +1629,4 @@ class _UserCard extends StatelessWidget {
       ),
     );
   }
-
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, min(2, name.length)).toUpperCase();
-  }
 }
-
-int min(int a, int b) => a < b ? a : b;
