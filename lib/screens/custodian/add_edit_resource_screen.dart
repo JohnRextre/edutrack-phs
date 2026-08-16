@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/resource_item.dart';
+import '../../services/qr_service.dart';
 import '../../services/resource_service.dart';
 
 class AddEditResourceScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
   late String _itemType;
   var _isSubmitting = false;
   var _syncAvailableWithTotal = true;
+  var _hasGeneratedQr = false;
 
   @override
   void initState() {
@@ -78,6 +80,12 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     );
   }
 
+  void _resetQrGeneratedState() {
+    if (_hasGeneratedQr) {
+      setState(() => _hasGeneratedQr = false);
+    }
+  }
+
   void _onMainCategoryChanged(String? value) {
     if (value == null) return;
     final subOptions = ResourceTaxonomy.subCategoriesFor(value);
@@ -88,6 +96,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
       _mainCategory = value;
       _subCategory = subOptions.isNotEmpty ? subOptions.first : '';
       _itemType = typeOptions.isNotEmpty ? typeOptions.first : '';
+      _hasGeneratedQr = false;
     });
   }
 
@@ -97,6 +106,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     setState(() {
       _subCategory = value;
       _itemType = typeOptions.isNotEmpty ? typeOptions.first : '';
+      _hasGeneratedQr = false;
     });
   }
 
@@ -106,6 +116,123 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     if (parsed != null && parsed > 0) {
       _availableQtyController.text = parsed.toString();
     }
+  }
+
+  Future<void> _generateQrCode() async {
+    final itemCode = _codeController.text.trim();
+    if (itemCode.isEmpty) {
+      _showSnackBar('Please enter an Item Code first.', isError: true);
+      return;
+    }
+
+    final qrPayload = QrService.buildResourcePayload(
+      itemCode: itemCode,
+      itemName: _nameController.text,
+      mainCategory: _mainCategory,
+      subCategory: _subCategory,
+    );
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await QrService.generateQrCode(qrPayload);
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    if (!result.success) {
+      _showSnackBar(result.message, isError: true);
+      return;
+    }
+
+    setState(() => _hasGeneratedQr = true);
+
+    final itemName = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : 'Unnamed Resource';
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Resource QR Code'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                itemName,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Code: $itemCode',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Image.network(
+                result.imageUrl!,
+                width: 200,
+                height: 200,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return SizedBox(
+                    width: 200,
+                    height: 200,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 200,
+                  height: 200,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Failed to load QR image.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                result.statusLabel,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.green.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -158,6 +285,9 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final subCategories = ResourceTaxonomy.subCategoriesFor(_mainCategory);
     final itemTypes = ResourceTaxonomy.itemTypesForSubCategory(_subCategory);
+    final canGenerateQr = _codeController.text.trim().isNotEmpty &&
+        !_isSubmitting &&
+        !_hasGeneratedQr;
 
     return Scaffold(
       appBar: AppBar(
@@ -182,6 +312,10 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
                 labelText: 'Item Name *',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) {
+                _resetQrGeneratedState();
+                setState(() {});
+              },
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Item name is required.';
@@ -197,12 +331,31 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
                 labelText: 'Item Code / Asset Tag *',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) {
+                _resetQrGeneratedState();
+                setState(() {});
+              },
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Item code is required.';
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: canGenerateQr ? _generateQrCode : null,
+                icon: Icon(
+                  _hasGeneratedQr
+                      ? Icons.check_circle_outline
+                      : Icons.qr_code_2_outlined,
+                ),
+                label: Text(
+                  _hasGeneratedQr ? 'QR Code Generated' : 'Generate QR Code',
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             _ResourceDropdownField<String>(

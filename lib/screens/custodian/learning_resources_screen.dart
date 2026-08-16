@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/resource_item.dart';
+import '../../services/qr_service.dart';
 import '../../services/resource_service.dart';
 import 'add_edit_resource_screen.dart';
 
@@ -79,6 +80,111 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
             : 'Resource "${resource.itemName}" updated successfully.',
       );
     }
+  }
+
+  Future<void> _showQrCode(ResourceItem resource) async {
+    final qrPayload = QrService.buildResourcePayload(
+      itemCode: resource.itemCode,
+      itemName: resource.itemName,
+      mainCategory: resource.mainCategory,
+      subCategory: resource.subCategory,
+    );
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await QrService.generateQrCode(qrPayload);
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    if (!result.success) {
+      _showSnackBar(result.message, isError: true);
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Resource QR Code'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                resource.itemName,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Code: ${resource.itemCode}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Image.network(
+                result.imageUrl!,
+                width: 200,
+                height: 200,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return SizedBox(
+                    width: 200,
+                    height: 200,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 200,
+                  height: 200,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Failed to load QR image.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                result.statusLabel,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.green.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDelete(ResourceItem resource) {
@@ -342,6 +448,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                           child: _InventoryCard(
                             resource: resource,
                             onEdit: () => _openAddEditScreen(resource),
+                            onQr: () => _showQrCode(resource),
                             onDelete: () => _confirmDelete(resource),
                           ),
                         ),
@@ -393,11 +500,13 @@ class _InventoryCard extends StatelessWidget {
   const _InventoryCard({
     required this.resource,
     required this.onEdit,
+    required this.onQr,
     required this.onDelete,
   });
 
   final ResourceItem resource;
   final VoidCallback onEdit;
+  final VoidCallback onQr;
   final VoidCallback onDelete;
 
   @override
@@ -502,6 +611,11 @@ class _InventoryCard extends StatelessWidget {
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit_outlined),
                   tooltip: 'Edit',
+                ),
+                IconButton(
+                  onPressed: onQr,
+                  icon: const Icon(Icons.qr_code_2_outlined),
+                  tooltip: 'Generate QR',
                 ),
                 IconButton(
                   onPressed: onDelete,
