@@ -5,7 +5,7 @@ import '../services/borrow_service.dart';
 import '../services/qr_service.dart';
 import '../widgets/borrow_status_badge.dart';
 
-/// Custodian screen to verify returns via item selection or QR payload lookup.
+/// Custodian screen to verify returns submitted by borrowers.
 class CustodianReturnVerificationScreen extends StatefulWidget {
   const CustodianReturnVerificationScreen({super.key});
 
@@ -51,7 +51,7 @@ class _CustodianReturnVerificationScreenState
       await action();
       if (mounted) {
         Navigator.pop(context);
-        _showSnackBar('Return verified. Inventory updated successfully.');
+        _showSnackBar('Action completed successfully.');
       }
     } catch (error) {
       if (mounted) {
@@ -84,7 +84,7 @@ class _CustodianReturnVerificationScreenState
             onPressed: () {
               Navigator.pop(dialogContext);
               _runWithLoading(
-                () => _borrowService.returnResource(
+                () => _borrowService.verifyReturn(
                   transaction.id,
                   transaction.resourceId,
                 ),
@@ -96,6 +96,55 @@ class _CustodianReturnVerificationScreenState
         ],
       ),
     );
+  }
+
+  void _rejectReturn(BorrowTransaction transaction) {
+    final reasonController = TextEditingController();
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reject Return'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reject the return request from ${transaction.userName} for '
+              '${transaction.resourceName}?',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Rejection reason (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _runWithLoading(
+                () => _borrowService.rejectReturn(
+                  transaction.id,
+                  rejectionReason: reasonController.text,
+                ),
+              );
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reject Return'),
+          ),
+        ],
+      ),
+    ).whenComplete(reasonController.dispose);
   }
 
   Future<void> _lookupByQrPayload() async {
@@ -122,13 +171,13 @@ class _CustodianReturnVerificationScreenState
 
     try {
       final transaction =
-          await _borrowService.findActiveBorrowByResourceCode(itemCode);
+          await _borrowService.findPendingReturnByResourceCode(itemCode);
       if (!mounted) return;
       Navigator.pop(context);
 
       if (transaction == null) {
         _showSnackBar(
-          'No active borrowing found for code "$itemCode".',
+          'No pending return request found for code "$itemCode".',
           isError: true,
         );
         return;
@@ -250,7 +299,7 @@ class _CustodianReturnVerificationScreenState
           const SizedBox(height: 8),
           Expanded(
             child: StreamBuilder<List<BorrowTransaction>>(
-              stream: _borrowService.watchActiveBorrowTransactions(),
+              stream: _borrowService.watchPendingReturnRequests(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -275,7 +324,8 @@ class _CustodianReturnVerificationScreenState
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: Text(
-                        'No active borrowings awaiting return.',
+                        'No return requests awaiting verification.\n'
+                        'Items appear here after a borrower submits a return.',
                         style: TextStyle(fontSize: 16, color: Colors.grey),
                         textAlign: TextAlign.center,
                       ),
@@ -290,9 +340,10 @@ class _CustodianReturnVerificationScreenState
                     final transaction = filtered[index];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16),
-                      child: _ActiveBorrowCard(
+                      child: _PendingReturnCard(
                         transaction: transaction,
                         onVerify: () => _verifyReturn(transaction),
+                        onReject: () => _rejectReturn(transaction),
                       ),
                     );
                   },
@@ -306,20 +357,19 @@ class _CustodianReturnVerificationScreenState
   }
 }
 
-class _ActiveBorrowCard extends StatelessWidget {
-  const _ActiveBorrowCard({
+class _PendingReturnCard extends StatelessWidget {
+  const _PendingReturnCard({
     required this.transaction,
     required this.onVerify,
+    required this.onReject,
   });
 
   final BorrowTransaction transaction;
   final VoidCallback onVerify;
+  final VoidCallback onReject;
 
   @override
   Widget build(BuildContext context) {
-    final isOverdue =
-        transaction.effectiveStatus == BorrowTransactionStatus.overdue;
-
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -355,26 +405,38 @@ class _ActiveBorrowCard extends StatelessWidget {
                 Expanded(child: Text(transaction.userName)),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Due: ${formatBorrowDate(transaction.expectedReturnDate)}',
-              style: TextStyle(
-                color: isOverdue ? Colors.red : null,
-                fontWeight: isOverdue ? FontWeight.w600 : null,
+            if (transaction.returnSubmittedDate != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Return submitted: '
+                '${formatBorrowDate(transaction.returnSubmittedDate!)}',
               ),
-            ),
+            ],
             if (transaction.requestedQuantity > 1) ...[
               const SizedBox(height: 4),
               Text('Quantity: ${transaction.requestedQuantity}'),
             ],
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onVerify,
-                icon: const Icon(Icons.fact_check),
-                label: const Text('Verify Return'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onReject,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    child: const Text('Reject'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onVerify,
+                    icon: const Icon(Icons.fact_check),
+                    label: const Text('Verify Return'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

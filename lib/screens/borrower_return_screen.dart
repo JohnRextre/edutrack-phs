@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
+import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
 
 /// Optional borrower flow to submit return details before custodian verification.
@@ -15,7 +16,9 @@ class BorrowerReturnScreen extends StatefulWidget {
 
 class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
   final _remarksController = TextEditingController();
+  final _borrowService = BorrowService();
   bool _photoAttached = false;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -23,7 +26,7 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_photoAttached) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -32,12 +35,31 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
       );
       return;
     }
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Return request submitted for verification.'),
-      ),
-    );
+
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    try {
+      await _borrowService.submitReturnRequest(widget.transaction.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Return request submitted for verification.'),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(BorrowService.friendlyErrorMessage(error)),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override

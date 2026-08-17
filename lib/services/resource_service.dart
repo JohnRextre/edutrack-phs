@@ -145,6 +145,15 @@ class ResourceService {
     await _resources.doc(trimmedId).delete();
   }
 
+  Future<ResourceItem?> getResourceById(String id) async {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) return null;
+
+    final doc = await _resources.doc(trimmedId).get();
+    if (!doc.exists) return null;
+    return ResourceItem.fromMap(doc.id, doc.data()!);
+  }
+
   Future<bool> itemCodeExists(String itemCode, {String? excludeId}) async {
     final normalized = itemCode.trim().toLowerCase();
     if (normalized.isEmpty) return false;

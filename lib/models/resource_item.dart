@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+/// Alias used by borrower-facing screens matching the resource data model spec.
+typedef ResourceModel = ResourceItem;
+
 class ResourceItem {
   const ResourceItem({
     required this.id,

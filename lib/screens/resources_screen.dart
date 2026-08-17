@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/account_role.dart';
 import '../models/borrow_transaction_model.dart';
@@ -9,8 +8,8 @@ import '../models/resource_item.dart';
 import '../services/auth_service.dart';
 import '../services/borrow_service.dart';
 import '../services/resource_service.dart';
-import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrower_navigation_bar.dart';
+import 'student/borrow_request_screen.dart';
 
 class ResourcesScreen extends StatefulWidget {
   const ResourcesScreen({super.key});
@@ -369,50 +368,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 
     if (!mounted) return;
 
-    final result = await showDialog<_BorrowRequestResult>(
-      context: context,
-      builder: (dialogContext) => _BorrowRequestDialog(
-        resource: resource,
-        isTeacher: borrower.userRole == 'teacher',
-        onValidationError: _showSnackBar,
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => BorrowRequestScreen(resource: resource),
       ),
     );
-
-    if (result == null || !mounted) return;
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      await _borrowService.requestBorrow(
-        resourceId: resource.id,
-        resourceName: resource.name,
-        resourceCode: resource.code,
-        userId: borrower.userId,
-        userName: borrower.userName,
-        userRole: borrower.userRole,
-        expectedReturnDate: result.expectedReturnDate,
-        requestedQuantity: result.requestedQuantity,
-      );
-      if (mounted) {
-        Navigator.pop(context);
-        _showSnackBar(
-          '${resource.name} request submitted successfully'
-          '${result.requestedQuantity > 1 ? ' (${result.requestedQuantity} items)' : ''}.',
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        Navigator.pop(context);
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
-      }
-    }
   }
 
   @override
@@ -773,188 +733,6 @@ class _ResourceImage extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
       ),
-    );
-  }
-}
-
-class _BorrowRequestResult {
-  const _BorrowRequestResult({
-    required this.expectedReturnDate,
-    required this.requestedQuantity,
-  });
-
-  final DateTime expectedReturnDate;
-  final int requestedQuantity;
-}
-
-class _BorrowRequestDialog extends StatefulWidget {
-  const _BorrowRequestDialog({
-    required this.resource,
-    required this.isTeacher,
-    required this.onValidationError,
-  });
-
-  final ResourceItem resource;
-  final bool isTeacher;
-  final void Function(String message, {bool isError}) onValidationError;
-
-  @override
-  State<_BorrowRequestDialog> createState() => _BorrowRequestDialogState();
-}
-
-class _BorrowRequestDialogState extends State<_BorrowRequestDialog> {
-  late final TextEditingController _quantityController;
-  DateTime? _expectedReturnDate;
-  String? _quantityError;
-
-  @override
-  void initState() {
-    super.initState();
-    _quantityController = TextEditingController(text: '1');
-  }
-
-  @override
-  void dispose() {
-    _quantityController.dispose();
-    super.dispose();
-  }
-
-  int? _parseRequestedQuantity() {
-    return int.tryParse(_quantityController.text.trim());
-  }
-
-  bool _validateQuantity({required bool showSnackBarOnError}) {
-    final quantity = _parseRequestedQuantity();
-    if (quantity == null || quantity < 1) {
-      _quantityError = 'Enter a valid quantity (1 or more).';
-      return false;
-    }
-    if (!widget.isTeacher && quantity != 1) {
-      _quantityError = 'Students can only borrow 1 item at a time.';
-      return false;
-    }
-    if (quantity > widget.resource.maxBorrowLimit) {
-      _quantityError =
-          'Exceeds the maximum limit set by the Property Custodian (Max: ${widget.resource.maxBorrowLimit})';
-      if (showSnackBarOnError) {
-        widget.onValidationError(_quantityError!, isError: true);
-      }
-      return false;
-    }
-    if (quantity > widget.resource.availableQuantity) {
-      _quantityError =
-          'Only ${widget.resource.availableQuantity} item${widget.resource.availableQuantity == 1 ? '' : 's'} available.';
-      if (showSnackBarOnError) {
-        widget.onValidationError(_quantityError!, isError: true);
-      }
-      return false;
-    }
-    _quantityError = null;
-    return true;
-  }
-
-  Future<void> _pickReturnDate() async {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: today.add(const Duration(days: 7)),
-      firstDate: today.add(const Duration(days: 1)),
-      lastDate: today.add(const Duration(days: 365)),
-    );
-    if (selected != null && mounted) {
-      setState(() => _expectedReturnDate = selected);
-    }
-  }
-
-  void _submit() {
-    if (_expectedReturnDate == null) return;
-    if (!_validateQuantity(showSnackBarOnError: true)) {
-      setState(() {});
-      return;
-    }
-
-    Navigator.pop(
-      context,
-      _BorrowRequestResult(
-        expectedReturnDate: _expectedReturnDate!,
-        requestedQuantity: _parseRequestedQuantity() ?? 1,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final resource = widget.resource;
-
-    return AlertDialog(
-      title: const Text('Request Borrow'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              resource.name,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text('Code: ${resource.code}'),
-            Text('Available: ${resource.availableQuantity}'),
-            if (widget.isTeacher)
-              Text('Max borrow limit: ${resource.maxBorrowLimit}'),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _quantityController,
-              enabled: widget.isTeacher,
-              readOnly: !widget.isTeacher,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Quantity',
-                border: const OutlineInputBorder(),
-                helperText: widget.isTeacher
-                    ? 'Teachers may request up to ${resource.maxBorrowLimit} per transaction'
-                    : 'Students are limited to 1 item per request',
-                errorText: _quantityError,
-              ),
-              onChanged: widget.isTeacher
-                  ? (_) {
-                      _validateQuantity(showSnackBarOnError: false);
-                      setState(() {});
-                    }
-                  : null,
-            ),
-            const SizedBox(height: 16),
-            InkWell(
-              onTap: _pickReturnDate,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Expected Return Date',
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.calendar_today_outlined),
-                ),
-                child: Text(
-                  _expectedReturnDate == null
-                      ? 'Select date'
-                      : formatBorrowDate(_expectedReturnDate!),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _expectedReturnDate == null ? null : _submit,
-          child: const Text('Submit Request'),
-        ),
-      ],
     );
   }
 }

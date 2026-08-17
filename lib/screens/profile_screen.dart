@@ -40,6 +40,20 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('Account Activities'),
+                subtitle: const Text('View borrowing and transaction history'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).pushNamed('/activity'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         OutlinedButton.icon(
           onPressed: () => Navigator.of(
             context,
@@ -49,6 +63,6 @@ class ProfileScreen extends StatelessWidget {
         ),
       ],
     ),
-    bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 5),
+    bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 4),
   );
 }
