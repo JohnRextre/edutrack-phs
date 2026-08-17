@@ -11,10 +11,14 @@ class ResourceItem {
     required this.itemType,
     required this.totalQuantity,
     required this.availableQuantity,
+    required this.maxBorrowLimit,
     required this.description,
     this.imageUrl,
     this.createdAt,
   });
+
+  /// Default per-transaction borrow cap for teachers when not set in Firestore.
+  static const int defaultMaxBorrowLimit = 1;
 
   final String id;
   final String itemName;
@@ -24,6 +28,9 @@ class ResourceItem {
   final String itemType;
   final int totalQuantity;
   final int availableQuantity;
+
+  /// Maximum quantity a teacher may request in a single borrow transaction.
+  final int maxBorrowLimit;
   final String description;
   final String? imageUrl;
   final DateTime? createdAt;
@@ -39,31 +46,89 @@ class ResourceItem {
 
   IconData get fallbackIcon => ResourceTaxonomy.iconForMainCategory(mainCategory);
 
-  factory ResourceItem.fromFirestore(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
-    final createdAtValue = data['createdAt'];
+  Map<String, dynamic> toMap() {
+    return {
+      'itemName': itemName,
+      'itemCode': itemCode,
+      'mainCategory': mainCategory,
+      'subCategory': subCategory,
+      'itemType': itemType,
+      'totalQuantity': totalQuantity,
+      'availableQuantity': availableQuantity,
+      'maxBorrowLimit': maxBorrowLimit,
+      'description': description,
+      'imageUrl': imageUrl ?? '',
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
+    };
+  }
+
+  factory ResourceItem.fromMap(String id, Map<String, dynamic> map) {
+    final totalQuantity = _asInt(map['totalQuantity'], fallback: 1);
+    final availableQuantity =
+        _asInt(map['availableQuantity'], fallback: totalQuantity);
+    final maxBorrowLimit = _asInt(
+      map['maxBorrowLimit'],
+      fallback: defaultMaxBorrowLimit,
+    );
+
+    final createdAtValue = map['createdAt'];
     DateTime? createdAt;
     if (createdAtValue is Timestamp) {
       createdAt = createdAtValue.toDate();
     }
 
     return ResourceItem(
-      id: doc.id,
-      itemName: (data['itemName'] ?? data['name'] ?? '').toString(),
-      itemCode: (data['itemCode'] ?? data['code'] ?? '').toString(),
+      id: id,
+      itemName: (map['itemName'] ?? map['name'] ?? '').toString(),
+      itemCode: (map['itemCode'] ?? map['code'] ?? '').toString(),
       mainCategory: ResourceTaxonomy.normalizeMainCategory(
-        data['mainCategory']?.toString(),
+        map['mainCategory']?.toString(),
       ),
-      subCategory: (data['subCategory'] ?? '').toString(),
-      itemType: (data['itemType'] ?? '').toString(),
-      totalQuantity: _asInt(data['totalQuantity'], fallback: 1),
-      availableQuantity: _asInt(data['availableQuantity'], fallback: 1),
-      description: (data['description'] ?? '').toString(),
-      imageUrl: data['imageUrl']?.toString(),
+      subCategory: (map['subCategory'] ?? '').toString(),
+      itemType: (map['itemType'] ?? '').toString(),
+      totalQuantity: totalQuantity,
+      availableQuantity: availableQuantity,
+      maxBorrowLimit: maxBorrowLimit.clamp(1, totalQuantity),
+      description: (map['description'] ?? '').toString(),
+      imageUrl: map['imageUrl']?.toString(),
       createdAt: createdAt,
     );
+  }
+
+  ResourceItem copyWith({
+    String? id,
+    String? itemName,
+    String? itemCode,
+    String? mainCategory,
+    String? subCategory,
+    String? itemType,
+    int? totalQuantity,
+    int? availableQuantity,
+    int? maxBorrowLimit,
+    String? description,
+    String? imageUrl,
+    DateTime? createdAt,
+  }) {
+    return ResourceItem(
+      id: id ?? this.id,
+      itemName: itemName ?? this.itemName,
+      itemCode: itemCode ?? this.itemCode,
+      mainCategory: mainCategory ?? this.mainCategory,
+      subCategory: subCategory ?? this.subCategory,
+      itemType: itemType ?? this.itemType,
+      totalQuantity: totalQuantity ?? this.totalQuantity,
+      availableQuantity: availableQuantity ?? this.availableQuantity,
+      maxBorrowLimit: maxBorrowLimit ?? this.maxBorrowLimit,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  factory ResourceItem.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    return ResourceItem.fromMap(doc.id, doc.data());
   }
 
   static int _asInt(Object? value, {required int fallback}) {

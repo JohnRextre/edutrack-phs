@@ -24,6 +24,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
   late final TextEditingController _codeController;
   late final TextEditingController _totalQtyController;
   late final TextEditingController _availableQtyController;
+  late final TextEditingController _maxBorrowLimitController;
   late final TextEditingController _descriptionController;
 
   late String _mainCategory;
@@ -44,6 +45,10 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     );
     _availableQtyController = TextEditingController(
       text: (resource?.availableQuantity ?? 1).toString(),
+    );
+    _maxBorrowLimitController = TextEditingController(
+      text: (resource?.maxBorrowLimit ?? ResourceItem.defaultMaxBorrowLimit)
+          .toString(),
     );
     _descriptionController = TextEditingController(
       text: resource?.description ?? '',
@@ -66,6 +71,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     _codeController.dispose();
     _totalQtyController.dispose();
     _availableQtyController.dispose();
+    _maxBorrowLimitController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -115,6 +121,10 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
     final parsed = int.tryParse(value);
     if (parsed != null && parsed > 0) {
       _availableQtyController.text = parsed.toString();
+      final maxLimit = int.tryParse(_maxBorrowLimitController.text.trim());
+      if (maxLimit == null || maxLimit > parsed) {
+        _maxBorrowLimitController.text = parsed.toString();
+      }
     }
   }
 
@@ -241,6 +251,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
 
     final totalQty = int.parse(_totalQtyController.text.trim());
     final availableQty = int.parse(_availableQtyController.text.trim());
+    final maxBorrowLimit = int.parse(_maxBorrowLimitController.text.trim());
 
     setState(() => _isSubmitting = true);
     try {
@@ -254,6 +265,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
           itemType: _itemType,
           totalQuantity: totalQty,
           availableQuantity: availableQty,
+          maxBorrowLimit: maxBorrowLimit,
           description: _descriptionController.text,
           imageUrl: widget.resource!.imageUrl,
         );
@@ -266,6 +278,7 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
           itemType: _itemType,
           totalQuantity: totalQty,
           availableQuantity: availableQty,
+          maxBorrowLimit: maxBorrowLimit,
           description: _descriptionController.text,
         );
       }
@@ -438,6 +451,30 @@ class _AddEditResourceScreenState extends State<AddEditResourceScreen> {
                 }
                 if (total != null && available > total) {
                   return 'Available quantity cannot exceed total quantity.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _maxBorrowLimitController,
+              enabled: !_isSubmitting,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Max Borrow Limit (for Teachers) *',
+                border: OutlineInputBorder(),
+                helperText:
+                    'Maximum quantity a teacher can request per transaction',
+              ),
+              validator: (value) {
+                final parsed = int.tryParse(value?.trim() ?? '');
+                final total = int.tryParse(_totalQtyController.text.trim());
+                if (parsed == null || parsed < 1) {
+                  return 'Enter a valid max borrow limit (1 or more).';
+                }
+                if (total != null && parsed > total) {
+                  return 'Max borrow limit cannot exceed total quantity.';
                 }
                 return null;
               },

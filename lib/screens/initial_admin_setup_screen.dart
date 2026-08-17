@@ -48,8 +48,16 @@ class _InitialAdminSetupScreenState extends State<InitialAdminSetupScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final fullName = _fullNameController.text.trim();
+      final nameParts = fullName.split(RegExp(r'\s+'));
+      final firstName = nameParts.first;
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : nameParts.first;
+
       await _authService.registerUser(
-        fullName: _fullNameController.text,
+        firstName: firstName,
+        lastName: lastName,
         email: _emailController.text,
         password: _passwordController.text,
         schoolId: _schoolIdController.text,

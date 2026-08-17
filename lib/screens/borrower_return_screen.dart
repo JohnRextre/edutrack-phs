@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
-import 'my_borrowings_screen.dart';
+import '../models/borrow_transaction_model.dart';
+import '../widgets/borrow_status_badge.dart';
 
+/// Optional borrower flow to submit return details before custodian verification.
 class BorrowerReturnScreen extends StatefulWidget {
-  const BorrowerReturnScreen({super.key, required this.item});
-  final BorrowedItem item;
+  const BorrowerReturnScreen({super.key, required this.transaction});
+
+  final BorrowTransaction transaction;
 
   @override
   State<BorrowerReturnScreen> createState() => _BorrowerReturnScreenState();
@@ -39,7 +42,7 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.item;
+    final transaction = widget.transaction;
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -49,15 +52,15 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
           Text(
-            item.title,
+            transaction.resourceName,
             style: Theme.of(
               context,
             ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 18),
-          _ItemHeaderCard(item: item),
+          _ItemHeaderCard(transaction: transaction),
           const SizedBox(height: 20),
-          const _ReturnTimeline(),
+          _ReturnTimeline(borrowDate: transaction.borrowDate),
           const SizedBox(height: 20),
           _InitiateReturnCard(
             remarksController: _remarksController,
@@ -73,8 +76,9 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
 }
 
 class _ItemHeaderCard extends StatelessWidget {
-  const _ItemHeaderCard({required this.item});
-  final BorrowedItem item;
+  const _ItemHeaderCard({required this.transaction});
+
+  final BorrowTransaction transaction;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -87,16 +91,12 @@ class _ItemHeaderCard extends StatelessWidget {
             SizedBox(
               height: 176,
               width: double.infinity,
-              child: Image.asset(
-                item.imagePath,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => ColoredBox(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  child: Icon(
-                    item.fallbackIcon,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  ),
+              child: ColoredBox(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
                 ),
               ),
             ),
@@ -105,7 +105,7 @@ class _ItemHeaderCard extends StatelessWidget {
               right: 12,
               child: Chip(
                 avatar: const Icon(Icons.inventory_2_outlined, size: 18),
-                label: Text('ID: ${item.assetTag}'),
+                label: Text('Code: ${transaction.resourceCode}'),
               ),
             ),
           ],
@@ -120,17 +120,31 @@ class _ItemHeaderCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.title,
+                      transaction.resourceName,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(item.location),
+                    Text(
+                      'Due: ${formatBorrowDate(transaction.expectedReturnDate)}',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      borrowDueLabel(transaction),
+                      style: TextStyle(
+                        color:
+                            transaction.effectiveStatus ==
+                                BorrowTransactionStatus.overdue
+                            ? Colors.red.shade700
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              DueStatus(status: item.dueStatus),
+              BorrowStatusBadge(transaction: transaction),
             ],
           ),
         ),
@@ -140,7 +154,9 @@ class _ItemHeaderCard extends StatelessWidget {
 }
 
 class _ReturnTimeline extends StatelessWidget {
-  const _ReturnTimeline();
+  const _ReturnTimeline({required this.borrowDate});
+
+  final DateTime borrowDate;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -148,31 +164,31 @@ class _ReturnTimeline extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Text(
+        children: [
+          const Text(
             'Return Status',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          Divider(height: 24),
+          const Divider(height: 24),
           _TimelineStep(
             icon: Icons.check_circle,
-            color: Color(0xFF0B65B9),
+            color: const Color(0xFF0B65B9),
             title: 'Borrowed',
-            detail: 'Oct 12, 2023 - 08:30 AM',
+            detail: formatBorrowDate(borrowDate),
             showLine: true,
           ),
-          _TimelineStep(
+          const _TimelineStep(
             icon: Icons.radio_button_checked,
             color: Color(0xFF0B65B9),
             title: 'Pending Verification',
             detail: 'Submit return details below',
             showLine: true,
           ),
-          _TimelineStep(
+          const _TimelineStep(
             icon: Icons.check_circle_outline,
             color: Color(0xFFB6B7BC),
             title: 'Return Approved',
-            detail: 'Awaiting admin review',
+            detail: 'Awaiting custodian review',
             showLine: false,
           ),
         ],
@@ -273,7 +289,7 @@ class _InitiateReturnCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Please provide a photo of the item to verify its condition before returning it to the IT office.',
+            'Please provide a photo of the item to verify its condition before returning it to the property custodian.',
           ),
           const SizedBox(height: 18),
           InkWell(

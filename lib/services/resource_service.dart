@@ -33,6 +33,7 @@ class ResourceService {
     required String itemType,
     required int totalQuantity,
     required int availableQuantity,
+    required int maxBorrowLimit,
     required String description,
     String? imageUrl,
   }) async {
@@ -47,6 +48,7 @@ class ResourceService {
       itemType: itemType,
       totalQuantity: totalQuantity,
       availableQuantity: availableQuantity,
+      maxBorrowLimit: maxBorrowLimit,
     );
 
     if (await itemCodeExists(trimmedCode)) {
@@ -65,6 +67,7 @@ class ResourceService {
       'itemType': itemType,
       'totalQuantity': totalQuantity,
       'availableQuantity': availableQuantity,
+      'maxBorrowLimit': maxBorrowLimit,
       'description': description.trim(),
       'imageUrl': imageUrl?.trim() ?? '',
       'createdAt': FieldValue.serverTimestamp(),
@@ -80,6 +83,7 @@ class ResourceService {
     required String itemType,
     required int totalQuantity,
     required int availableQuantity,
+    required int maxBorrowLimit,
     required String description,
     String? imageUrl,
   }) async {
@@ -103,6 +107,7 @@ class ResourceService {
       itemType: itemType,
       totalQuantity: totalQuantity,
       availableQuantity: availableQuantity,
+      maxBorrowLimit: maxBorrowLimit,
     );
 
     if (await itemCodeExists(trimmedCode, excludeId: trimmedId)) {
@@ -121,6 +126,7 @@ class ResourceService {
       'itemType': itemType,
       'totalQuantity': totalQuantity,
       'availableQuantity': availableQuantity,
+      'maxBorrowLimit': maxBorrowLimit,
       'description': description.trim(),
       'imageUrl': imageUrl?.trim() ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
@@ -179,6 +185,7 @@ class ResourceService {
     required String itemType,
     required int totalQuantity,
     required int availableQuantity,
+    required int maxBorrowLimit,
   }) {
     if (itemName.isEmpty) {
       throw FirebaseException(
@@ -220,6 +227,14 @@ class ResourceService {
         plugin: 'cloud_firestore',
         code: 'invalid-quantity',
         message: 'Available quantity must be between 0 and total quantity.',
+      );
+    }
+    if (maxBorrowLimit < 1 || maxBorrowLimit > totalQuantity) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-quantity',
+        message:
+            'Max borrow limit must be greater than 0 and not exceed total quantity.',
       );
     }
   }

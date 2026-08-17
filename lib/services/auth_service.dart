@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../models/account_role.dart';
+import '../models/user_model.dart';
 
 class AuthService {
   AuthService();
@@ -105,28 +106,56 @@ class AuthService {
     }
   }
 
+  Future<bool> isSchoolIdRegistered(String schoolId) async {
+    final trimmedSchoolId = schoolId.trim();
+    if (trimmedSchoolId.isEmpty) return false;
+
+    final snapshot = await _firestore
+        .collection(usersCollection)
+        .where('schoolId', isEqualTo: trimmedSchoolId)
+        .limit(1)
+        .get();
+
+    return snapshot.docs.isNotEmpty;
+  }
+
   Future<UserCredential> registerUser({
-    required String fullName,
+    required String firstName,
+    required String lastName,
     required String email,
     required String password,
     required String schoolId,
     required AccountRole role,
     bool isInitialAdmin = false,
   }) async {
-    final trimmedName = fullName.trim();
+    final trimmedFirstName = firstName.trim();
+    final trimmedLastName = lastName.trim();
     final trimmedEmail = email.trim();
     final trimmedSchoolId = schoolId.trim();
 
-    if (trimmedName.isEmpty) {
+    if (trimmedFirstName.isEmpty || trimmedLastName.isEmpty) {
       throw FirebaseAuthException(
         code: 'invalid-name',
-        message: 'Please enter your full name.',
+        message: 'Please enter your first and last name.',
       );
     }
     if (trimmedSchoolId.isEmpty) {
       throw FirebaseAuthException(
         code: 'invalid-school-id',
         message: 'Please enter your school ID.',
+      );
+    }
+    if (trimmedEmail.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'invalid-email',
+        message: 'Please enter your email address.',
+      );
+    }
+
+    if (await isSchoolIdRegistered(trimmedSchoolId)) {
+      throw FirebaseAuthException(
+        code: 'school-id-already-in-use',
+        message: 'School ID / Employee ID is already registered.',
       );
     }
 
@@ -144,14 +173,17 @@ class AuthService {
         );
       }
 
+      final profile = UserModel(
+        uid: user.uid,
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
+        email: trimmedEmail,
+        schoolId: trimmedSchoolId,
+        role: AuthService.firestoreRoleLabel(role),
+      );
+
       await _firestore.collection(usersCollection).doc(user.uid).set({
-        'uid': user.uid,
-        'schoolId': trimmedSchoolId,
-        'fullName': trimmedName,
-        'email': trimmedEmail,
-        'role': firestoreRoleLabel(role),
-        'departmentOrSection': '',
-        'status': 'Active',
+        ...profile.toMap(),
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -273,7 +305,9 @@ class AuthService {
         case 'weak-password':
           return 'This password is too weak. Please choose a stronger password.';
         case 'email-already-in-use':
-          return 'An account already exists with this email address.';
+          return 'This email address is already registered.';
+        case 'school-id-already-in-use':
+          return 'School ID / Employee ID is already registered.';
         case 'invalid-email':
           return 'Please enter a valid email address.';
         case 'wrong-password':

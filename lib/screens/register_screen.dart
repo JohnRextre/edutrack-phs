@@ -14,7 +14,8 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _schoolIdController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -27,7 +28,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _schoolIdController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -41,7 +43,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      _showSnackBar('Passwords do not match.');
+      _showSnackBar('Passwords do not match.', isError: true);
       return;
     }
 
@@ -49,7 +51,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       final credential = await _authService.registerUser(
-        fullName: _fullNameController.text,
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
         email: _emailController.text,
         password: _passwordController.text,
         schoolId: _schoolIdController.text,
@@ -60,7 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final user = credential.user;
       if (user == null) {
-        _showSnackBar('Account creation failed. Please try again.');
+        _showSnackBar('Account creation failed. Please try again.', isError: true);
         return;
       }
 
@@ -70,19 +73,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
       Navigator.of(context).pushReplacement(route);
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
-      _showSnackBar(AuthService.friendlyErrorMessage(error));
+      _showSnackBar(AuthService.friendlyErrorMessage(error), isError: true);
     } catch (error) {
       if (!mounted) return;
-      _showSnackBar(AuthService.friendlyErrorMessage(error));
+      _showSnackBar(AuthService.friendlyErrorMessage(error), isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : null,
+      ),
+    );
   }
 
   @override
@@ -152,26 +158,44 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
-                      controller: _fullNameController,
+                      controller: _firstNameController,
+                      textCapitalization: TextCapitalization.words,
                       decoration: const InputDecoration(
-                        labelText: 'Full Name',
+                        labelText: 'First Name',
                         prefixIcon: Icon(Icons.badge_outlined),
                       ),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
-                          ? 'Enter your full name.'
+                          ? 'Enter your first name.'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _lastNameController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Last Name',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Enter your last name.'
                           : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _schoolIdController,
-                      decoration: const InputDecoration(
-                        labelText: 'School ID',
-                        prefixIcon: Icon(Icons.numbers_outlined),
+                      decoration: InputDecoration(
+                        labelText: _selectedRole == AccountRole.teacher
+                            ? 'Employee ID'
+                            : 'School ID',
+                        prefixIcon: const Icon(Icons.numbers_outlined),
                       ),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
-                          ? 'Enter your school ID.'
+                          ? _selectedRole == AccountRole.teacher
+                                ? 'Enter your employee ID.'
+                                : 'Enter your school ID.'
                           : null,
                     ),
                     const SizedBox(height: 16),

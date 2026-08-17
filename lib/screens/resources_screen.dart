@@ -1,7 +1,15 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../models/account_role.dart';
+import '../models/borrow_transaction_model.dart';
 import '../models/resource_item.dart';
+import '../services/auth_service.dart';
+import '../services/borrow_service.dart';
 import '../services/resource_service.dart';
+import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrower_navigation_bar.dart';
 
 class ResourcesScreen extends StatefulWidget {
@@ -12,8 +20,8 @@ class ResourcesScreen extends StatefulWidget {
 }
 
 class _ResourcesScreenState extends State<ResourcesScreen> {
-  final Map<String, bool> _pendingRequests = {};
   final ResourceService _resourceService = ResourceService();
+  final BorrowService _borrowService = BorrowService();
 
   // Tier 1: Main Category Selection
   String _selectedMainCategory = 'All';
@@ -322,20 +330,88 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     );
   }
 
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : null,
+      ),
+    );
+  }
+
+  Future<({String userId, String userName, String userRole})?>
+  _currentBorrower() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final doc = await FirebaseFirestore.instance
+        .collection(AuthService.usersCollection)
+        .doc(user.uid)
+        .get();
+    final role = AuthService.accountRoleFromFirestoreValue(doc.data()?['role']);
+    if (!role.isBorrower) return null;
+
+    return (
+      userId: user.uid,
+      userName: (doc.data()?['fullName'] ?? 'Unknown User').toString(),
+      userRole: role == AccountRole.teacher ? 'teacher' : 'student',
+    );
+  }
+
   Future<void> _openBorrowRequest(ResourceItem resource) async {
-    final submitted = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => _BorrowRequestScreen(resource: resource),
+    final borrower = await _currentBorrower();
+    if (borrower == null) {
+      if (mounted) {
+        _showSnackBar('Please sign in to request a borrow.', isError: true);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    final result = await showDialog<_BorrowRequestResult>(
+      context: context,
+      builder: (dialogContext) => _BorrowRequestDialog(
+        resource: resource,
+        isTeacher: borrower.userRole == 'teacher',
+        onValidationError: _showSnackBar,
       ),
     );
 
-    if (submitted == true && mounted) {
-      setState(() => _pendingRequests[resource.code] = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${resource.name} request submitted successfully.'),
-        ),
+    if (result == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await _borrowService.requestBorrow(
+        resourceId: resource.id,
+        resourceName: resource.name,
+        resourceCode: resource.code,
+        userId: borrower.userId,
+        userName: borrower.userName,
+        userRole: borrower.userRole,
+        expectedReturnDate: result.expectedReturnDate,
+        requestedQuantity: result.requestedQuantity,
       );
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar(
+          '${resource.name} request submitted successfully'
+          '${result.requestedQuantity > 1 ? ' (${result.requestedQuantity} items)' : ''}.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar(
+          BorrowService.friendlyErrorMessage(error),
+          isError: true,
+        );
+      }
     }
   }
 
@@ -344,30 +420,44 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     final subCategories = _getSubCategories(_selectedMainCategory);
     final itemTypes = _getItemTypes(_selectedSubCategory);
 
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Browse Resources')),
-      body: StreamBuilder<List<ResourceItem>>(
-        stream: _resourceService.watchResources(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Unable to load resources.\n'
-                '${ResourceService.friendlyErrorMessage(snapshot.error!)}',
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
+      body: userId == null
+          ? const Center(child: Text('Please sign in to browse resources.'))
+          : StreamBuilder<List<BorrowTransaction>>(
+              stream: _borrowService.getStudentBorrowHistory(userId),
+              builder: (context, borrowSnapshot) {
+                final pendingResourceIds = (borrowSnapshot.data ?? const [])
+                    .where((transaction) => transaction.isPending)
+                    .map((transaction) => transaction.resourceId)
+                    .toSet();
 
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+                return StreamBuilder<List<ResourceItem>>(
+                  stream: _resourceService.watchResources(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Unable to load resources.\n'
+                          '${ResourceService.friendlyErrorMessage(snapshot.error!)}',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
 
-          final filteredResources =
-              _getFilteredResources(snapshot.data ?? const []);
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
 
-          return ListView(
+                    final filteredResources =
+                        _getFilteredResources(snapshot.data ?? const []);
+
+                    return ListView(
         padding: const EdgeInsets.all(20),
         children: [
           SearchBar(
@@ -521,181 +611,18 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                 padding: const EdgeInsets.only(bottom: 16),
                 child: _ResourceCard(
                   resource: resource,
-                  pending: _pendingRequests[resource.code] ?? false,
+                  pending: pendingResourceIds.contains(resource.id),
                   onBorrow: () => _openBorrowRequest(resource),
                 ),
               ),
             ),
         ],
       );
-        },
-      ),
+                  },
+                );
+              },
+            ),
       bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 1),
-    );
-  }
-}
-
-class _BorrowRequestScreen extends StatefulWidget {
-  const _BorrowRequestScreen({required this.resource});
-
-  final ResourceItem resource;
-
-  @override
-  State<_BorrowRequestScreen> createState() => _BorrowRequestScreenState();
-}
-
-class _BorrowRequestScreenState extends State<_BorrowRequestScreen> {
-  late DateTime _borrowDate;
-  DateTime? _returnDate;
-  final _purposeController = TextEditingController();
-  final _remarksController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _borrowDate = DateUtils.dateOnly(DateTime.now());
-  }
-
-  @override
-  void dispose() {
-    _purposeController.dispose();
-    _remarksController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate({required bool isReturnDate}) async {
-    final current = isReturnDate ? (_returnDate ?? _borrowDate) : _borrowDate;
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: current,
-      firstDate: _borrowDate,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (selected != null) {
-      setState(() {
-        if (isReturnDate) {
-          _returnDate = selected;
-        } else {
-          _borrowDate = selected;
-          if (_returnDate != null && _returnDate!.isBefore(selected)) {
-            _returnDate = null;
-          }
-        }
-      });
-    }
-  }
-
-  void _submit() {
-    if (_returnDate == null || _purposeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please provide a return date and purpose of borrowing.',
-          ),
-        ),
-      );
-      return;
-    }
-    Navigator.of(context).pop(true);
-  }
-
-  String _dateLabel(DateTime? date) => date == null
-      ? 'Select date'
-      : MaterialLocalizations.of(context).formatMediumDate(date);
-
-  @override
-  Widget build(BuildContext context) {
-    final resource = widget.resource;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Borrow Request')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-          children: [
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _ResourceImage(resource: resource, height: 176),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          resource.name,
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            Chip(label: Text('Code: ${resource.code}')),
-                            Chip(label: Text(resource.subCategory)),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(resource.description),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Request Details',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            _DateField(
-              label: 'Borrow Date',
-              value: _dateLabel(_borrowDate),
-              onTap: () => _pickDate(isReturnDate: false),
-            ),
-            const SizedBox(height: 12),
-            _DateField(
-              label: 'Return Date / Due Date',
-              value: _dateLabel(_returnDate),
-              onTap: () => _pickDate(isReturnDate: true),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _purposeController,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Purpose of Borrowing',
-                hintText: 'e.g., Research for Science Fair / STEM Class',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _remarksController,
-              minLines: 3,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                labelText: 'Remarks (Optional)',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(16),
-        child: FilledButton.icon(
-          onPressed: _submit,
-          icon: const Icon(Icons.send),
-          label: const Text('Submit Borrow Request'),
-        ),
-      ),
     );
   }
 }
@@ -778,7 +705,7 @@ class _ResourceCard extends StatelessWidget {
                     pending
                         ? 'Pending Request'
                         : resource.isAvailable
-                        ? 'Borrow'
+                        ? 'Request Borrow'
                         : 'Unavailable',
                   ),
                 ),
@@ -850,27 +777,185 @@ class _ResourceImage extends StatelessWidget {
   }
 }
 
-class _DateField extends StatelessWidget {
-  const _DateField({
-    required this.label,
-    required this.value,
-    required this.onTap,
+class _BorrowRequestResult {
+  const _BorrowRequestResult({
+    required this.expectedReturnDate,
+    required this.requestedQuantity,
   });
-  final String label;
-  final String value;
-  final VoidCallback onTap;
+
+  final DateTime expectedReturnDate;
+  final int requestedQuantity;
+}
+
+class _BorrowRequestDialog extends StatefulWidget {
+  const _BorrowRequestDialog({
+    required this.resource,
+    required this.isTeacher,
+    required this.onValidationError,
+  });
+
+  final ResourceItem resource;
+  final bool isTeacher;
+  final void Function(String message, {bool isError}) onValidationError;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(4),
-    child: InputDecorator(
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        suffixIcon: const Icon(Icons.calendar_today_outlined),
-      ),
-      child: Text(value),
-    ),
-  );
+  State<_BorrowRequestDialog> createState() => _BorrowRequestDialogState();
 }
+
+class _BorrowRequestDialogState extends State<_BorrowRequestDialog> {
+  late final TextEditingController _quantityController;
+  DateTime? _expectedReturnDate;
+  String? _quantityError;
+
+  @override
+  void initState() {
+    super.initState();
+    _quantityController = TextEditingController(text: '1');
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  int? _parseRequestedQuantity() {
+    return int.tryParse(_quantityController.text.trim());
+  }
+
+  bool _validateQuantity({required bool showSnackBarOnError}) {
+    final quantity = _parseRequestedQuantity();
+    if (quantity == null || quantity < 1) {
+      _quantityError = 'Enter a valid quantity (1 or more).';
+      return false;
+    }
+    if (!widget.isTeacher && quantity != 1) {
+      _quantityError = 'Students can only borrow 1 item at a time.';
+      return false;
+    }
+    if (quantity > widget.resource.maxBorrowLimit) {
+      _quantityError =
+          'Exceeds the maximum limit set by the Property Custodian (Max: ${widget.resource.maxBorrowLimit})';
+      if (showSnackBarOnError) {
+        widget.onValidationError(_quantityError!, isError: true);
+      }
+      return false;
+    }
+    if (quantity > widget.resource.availableQuantity) {
+      _quantityError =
+          'Only ${widget.resource.availableQuantity} item${widget.resource.availableQuantity == 1 ? '' : 's'} available.';
+      if (showSnackBarOnError) {
+        widget.onValidationError(_quantityError!, isError: true);
+      }
+      return false;
+    }
+    _quantityError = null;
+    return true;
+  }
+
+  Future<void> _pickReturnDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: today.add(const Duration(days: 7)),
+      firstDate: today.add(const Duration(days: 1)),
+      lastDate: today.add(const Duration(days: 365)),
+    );
+    if (selected != null && mounted) {
+      setState(() => _expectedReturnDate = selected);
+    }
+  }
+
+  void _submit() {
+    if (_expectedReturnDate == null) return;
+    if (!_validateQuantity(showSnackBarOnError: true)) {
+      setState(() {});
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _BorrowRequestResult(
+        expectedReturnDate: _expectedReturnDate!,
+        requestedQuantity: _parseRequestedQuantity() ?? 1,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final resource = widget.resource;
+
+    return AlertDialog(
+      title: const Text('Request Borrow'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              resource.name,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Code: ${resource.code}'),
+            Text('Available: ${resource.availableQuantity}'),
+            if (widget.isTeacher)
+              Text('Max borrow limit: ${resource.maxBorrowLimit}'),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _quantityController,
+              enabled: widget.isTeacher,
+              readOnly: !widget.isTeacher,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Quantity',
+                border: const OutlineInputBorder(),
+                helperText: widget.isTeacher
+                    ? 'Teachers may request up to ${resource.maxBorrowLimit} per transaction'
+                    : 'Students are limited to 1 item per request',
+                errorText: _quantityError,
+              ),
+              onChanged: widget.isTeacher
+                  ? (_) {
+                      _validateQuantity(showSnackBarOnError: false);
+                      setState(() {});
+                    }
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: _pickReturnDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Expected Return Date',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today_outlined),
+                ),
+                child: Text(
+                  _expectedReturnDate == null
+                      ? 'Select date'
+                      : formatBorrowDate(_expectedReturnDate!),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _expectedReturnDate == null ? null : _submit,
+          child: const Text('Submit Request'),
+        ),
+      ],
+    );
+  }
+}
+

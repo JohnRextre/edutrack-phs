@@ -79,6 +79,18 @@ class QrService {
     ].join('\n');
   }
 
+  /// Extracts the item code from a scanned or pasted QR payload line.
+  static String? parseItemCodeFromPayload(String payload) {
+    for (final line in payload.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.toLowerCase().startsWith('item code:')) {
+        final code = trimmed.substring('item code:'.length).trim();
+        return code.isEmpty ? null : code;
+      }
+    }
+    return null;
+  }
+
   /// Validates [qrPayload], calls the QR API, and returns a structured result.
   static Future<QrCodeResult> generateQrCode(String qrPayload) async {
     final trimmedPayload = qrPayload.trim();
