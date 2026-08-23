@@ -18,6 +18,10 @@ class ResourceItem {
     required this.description,
     this.imageUrl,
     this.createdAt,
+    this.damagedQuantity = 0,
+    this.lostQuantity = 0,
+    this.condition = '',
+    this.inventoryStatus = '',
   });
 
   /// Default per-transaction borrow cap for teachers when not set in Firestore.
@@ -37,6 +41,10 @@ class ResourceItem {
   final String description;
   final String? imageUrl;
   final DateTime? createdAt;
+  final int damagedQuantity;
+  final int lostQuantity;
+  final String condition;
+  final String inventoryStatus;
 
   /// Legacy aliases used by borrower screens.
   String get name => itemName;
@@ -61,12 +69,19 @@ class ResourceItem {
       'maxBorrowLimit': maxBorrowLimit,
       'description': description,
       'imageUrl': imageUrl ?? '',
+      if (damagedQuantity > 0) 'damagedQuantity': damagedQuantity,
+      if (lostQuantity > 0) 'lostQuantity': lostQuantity,
+      if (condition.isNotEmpty) 'condition': condition,
+      if (inventoryStatus.isNotEmpty) 'status': inventoryStatus,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
     };
   }
 
   factory ResourceItem.fromMap(String id, Map<String, dynamic> map) {
-    final totalQuantity = _asInt(map['totalQuantity'], fallback: 1);
+    final totalQuantity = _asInt(
+      map['totalQuantity'] ?? map['quantity'],
+      fallback: 1,
+    );
     final availableQuantity =
         _asInt(map['availableQuantity'], fallback: totalQuantity);
     final maxBorrowLimit = _asInt(
@@ -95,6 +110,11 @@ class ResourceItem {
       description: (map['description'] ?? '').toString(),
       imageUrl: map['imageUrl']?.toString(),
       createdAt: createdAt,
+      damagedQuantity: _asInt(map['damagedQuantity'], fallback: 0),
+      lostQuantity: _asInt(map['lostQuantity'], fallback: 0),
+      condition: (map['condition'] ?? '').toString(),
+      inventoryStatus: (map['status'] ?? map['inventoryStatus'] ?? '')
+          .toString(),
     );
   }
 
@@ -111,6 +131,10 @@ class ResourceItem {
     String? description,
     String? imageUrl,
     DateTime? createdAt,
+    int? damagedQuantity,
+    int? lostQuantity,
+    String? condition,
+    String? inventoryStatus,
   }) {
     return ResourceItem(
       id: id ?? this.id,
@@ -125,6 +149,10 @@ class ResourceItem {
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
+      damagedQuantity: damagedQuantity ?? this.damagedQuantity,
+      lostQuantity: lostQuantity ?? this.lostQuantity,
+      condition: condition ?? this.condition,
+      inventoryStatus: inventoryStatus ?? this.inventoryStatus,
     );
   }
 

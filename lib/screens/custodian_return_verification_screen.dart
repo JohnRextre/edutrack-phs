@@ -4,6 +4,8 @@ import '../models/borrow_transaction_model.dart';
 import '../services/borrow_service.dart';
 import '../services/qr_service.dart';
 import '../widgets/borrow_status_badge.dart';
+import '../widgets/return_verification_details.dart';
+import 'custodian/return_verification_details_screen.dart';
 
 /// Custodian screen to verify returns submitted by borrowers.
 class CustodianReturnVerificationScreen extends StatefulWidget {
@@ -19,7 +21,6 @@ class _CustodianReturnVerificationScreenState
   final BorrowService _borrowService = BorrowService();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _qrPayloadController = TextEditingController();
-  bool _isProcessing = false;
 
   @override
   void dispose() {
@@ -37,114 +38,15 @@ class _CustodianReturnVerificationScreenState
     );
   }
 
-  Future<void> _runWithLoading(Future<void> Function() action) async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+  void _openReturnDetails(BorrowTransaction transaction) {
+    ReturnVerificationDetailsScreen.open(
+      context,
+      transaction: transaction,
     );
-
-    try {
-      await action();
-      if (mounted) {
-        Navigator.pop(context);
-        _showSnackBar('Action completed successfully.');
-      }
-    } catch (error) {
-      if (mounted) {
-        Navigator.pop(context);
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
   }
 
   void _verifyReturn(BorrowTransaction transaction) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Verify Return'),
-        content: Text(
-          'Confirm that ${transaction.resourceName} (${transaction.resourceCode}) '
-          'has been returned by ${transaction.userName}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _runWithLoading(
-                () => _borrowService.verifyReturn(
-                  transaction.id,
-                  transaction.resourceId,
-                ),
-              );
-            },
-            icon: const Icon(Icons.verified_user),
-            label: const Text('Verify Return'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _rejectReturn(BorrowTransaction transaction) {
-    final reasonController = TextEditingController();
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reject Return'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Reject the return request from ${transaction.userName} for '
-              '${transaction.resourceName}?',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Rejection reason (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _runWithLoading(
-                () => _borrowService.rejectReturn(
-                  transaction.id,
-                  rejectionReason: reasonController.text,
-                ),
-              );
-            },
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Reject Return'),
-          ),
-        ],
-      ),
-    ).whenComplete(reasonController.dispose);
+    _openReturnDetails(transaction);
   }
 
   Future<void> _lookupByQrPayload() async {
@@ -342,8 +244,8 @@ class _CustodianReturnVerificationScreenState
                       padding: const EdgeInsets.only(bottom: 16),
                       child: _PendingReturnCard(
                         transaction: transaction,
-                        onVerify: () => _verifyReturn(transaction),
-                        onReject: () => _rejectReturn(transaction),
+                        onTap: () => _openReturnDetails(transaction),
+                        onVerify: () => _openReturnDetails(transaction),
                       ),
                     );
                   },
@@ -360,85 +262,77 @@ class _CustodianReturnVerificationScreenState
 class _PendingReturnCard extends StatelessWidget {
   const _PendingReturnCard({
     required this.transaction,
+    required this.onTap,
     required this.onVerify,
-    required this.onReject,
   });
 
   final BorrowTransaction transaction;
+  final VoidCallback onTap;
   final VoidCallback onVerify;
-  final VoidCallback onReject;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    transaction.resourceName,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      transaction.resourceName,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-                BorrowStatusBadge(transaction: transaction, compact: true),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              transaction.resourceCode,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
+                  BorrowStatusBadge(transaction: transaction, compact: true),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.person_outline, size: 16),
-                const SizedBox(width: 6),
-                Expanded(child: Text(transaction.userName)),
-              ],
-            ),
-            if (transaction.returnSubmittedDate != null) ...[
               const SizedBox(height: 4),
               Text(
-                'Return submitted: '
-                '${formatBorrowDate(transaction.returnSubmittedDate!)}',
-              ),
-            ],
-            if (transaction.requestedQuantity > 1) ...[
-              const SizedBox(height: 4),
-              Text('Quantity: ${transaction.requestedQuantity}'),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onReject,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
-                    child: const Text('Reject'),
-                  ),
+                transaction.resourceCode,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onVerify,
-                    icon: const Icon(Icons.fact_check),
-                    label: const Text('Verify Return'),
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.person_outline, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(transaction.userName)),
+                ],
+              ),
+              if (transaction.returnSubmittedDate != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Return submitted: '
+                  '${formatBorrowDate(transaction.returnSubmittedDate!)}',
                 ),
               ],
-            ),
-          ],
+              if (transaction.requestedQuantity > 1) ...[
+                const SizedBox(height: 4),
+                Text('Quantity: ${transaction.requestedQuantity}'),
+              ],
+              const SizedBox(height: 12),
+              ReturnSubmissionPreview(transaction: transaction),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onVerify,
+                  icon: const Icon(Icons.fact_check),
+                  label: const Text('Verify Return'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

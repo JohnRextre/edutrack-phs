@@ -6,6 +6,7 @@ import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrow_transaction_details_modal.dart';
 import '../widgets/borrower_navigation_bar.dart';
+import 'student/return_item_screen.dart';
 
 /// Shows the student's or teacher's currently borrowed items from Firestore.
 class MyBorrowingsScreen extends StatelessWidget {
@@ -98,56 +99,24 @@ class _BorrowedItemCard extends StatefulWidget {
 }
 
 class _BorrowedItemCardState extends State<_BorrowedItemCard> {
-  bool _isSubmittingReturn = false;
-
-  Future<void> _submitReturn() async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _startReturnFlow() async {
+    final returnType = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Return Item'),
-        content: Text(
-          'Submit a return request for ${widget.transaction.resourceName}? '
-          'The property custodian will verify the item before it is marked returned.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Return Item'),
-          ),
-        ],
+      builder: (dialogContext) => _ReturnTypeSelectionDialog(
+        resourceName: widget.transaction.resourceName,
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (returnType == null || !mounted) return;
 
-    setState(() => _isSubmittingReturn = true);
-    try {
-      await widget.borrowService.submitReturnRequest(widget.transaction.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Return request submitted. Track progress under My Requests → Return Requests.',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(BorrowService.friendlyErrorMessage(error)),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmittingReturn = false);
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReturnItemScreen(
+          transaction: widget.transaction,
+          returnType: returnType,
+        ),
+      ),
+    );
   }
 
   @override
@@ -222,17 +191,8 @@ class _BorrowedItemCardState extends State<_BorrowedItemCard> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _isSubmittingReturn ? null : _submitReturn,
-                      icon: _isSubmittingReturn
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.assignment_return, size: 18),
+                      onPressed: _startReturnFlow,
+                      icon: const Icon(Icons.assignment_return, size: 18),
                       label: const Text('Return Item'),
                     ),
                   ),
@@ -242,6 +202,70 @@ class _BorrowedItemCardState extends State<_BorrowedItemCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ReturnTypeSelectionDialog extends StatelessWidget {
+  const _ReturnTypeSelectionDialog({required this.resourceName});
+
+  final String resourceName;
+
+  static const _icons = <String, IconData>{
+    ReturnType.goodCondition: Icons.check_circle_outline,
+    ReturnType.paymentProof: Icons.receipt_long_outlined,
+    ReturnType.repairedProof: Icons.build_outlined,
+    ReturnType.replacementProof: Icons.swap_horiz_outlined,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Return Type'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'How are you returning $resourceName?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...ReturnType.all.map((type) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  leading: Icon(_icons[type]),
+                  title: Text(
+                    ReturnType.labelFor(type),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(context, type),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 }
