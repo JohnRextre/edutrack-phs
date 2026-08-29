@@ -25,6 +25,8 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
   DateTime? _expectedReturnDate;
   int _requestedQuantity = 1;
   bool _isSubmitting = false;
+  bool _submitted = false;
+  bool _hasActiveStudentBorrow = false;
 
   String? _userId;
   String? _userName;
@@ -95,6 +97,22 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
         }
       }
     });
+
+    if (_userId != null && _userRole == 'student') {
+      _hasActiveStudentBorrow = await _borrowService
+          .hasActiveStudentBorrowForResource(
+            userId: _userId!,
+            resourceId: resource.id,
+          );
+      if (mounted) {
+        setState(() {});
+        if (_hasActiveStudentBorrow) {
+          _showSnackBar(
+            'You already have an active borrow request for this item.',
+          );
+        }
+      }
+    }
   }
 
   String _formatPickerDate(DateTime date) {
@@ -145,7 +163,8 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
     final borrowDay = _dateOnly(_borrowDate);
     final selected = await showDatePicker(
       context: context,
-      initialDate: _expectedReturnDate ?? borrowDay.add(const Duration(days: 7)),
+      initialDate:
+          _expectedReturnDate ?? borrowDay.add(const Duration(days: 7)),
       firstDate: borrowDay,
       lastDate: _maxReturnDate,
       helpText: 'Select return date',
@@ -182,18 +201,28 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
 
   Future<void> _submit() async {
     if (_userId == null || _userName == null || _userRole == null) {
-      _showSnackBar('Please sign in to submit a borrow request.', isError: true);
+      _showSnackBar(
+        'Please sign in to submit a borrow request.',
+        isError: true,
+      );
       return;
     }
+
+    if (_userRole == 'student' && _hasActiveStudentBorrow) {
+      _showSnackBar(
+        'You already have an active borrow request for this item. Please return your existing item before borrowing it again.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _submitted = true);
 
     if (!_formKey.currentState!.validate()) return;
 
     final returnDate = _expectedReturnDate;
     final returnError = _validateReturnDate(returnDate);
-    if (returnError != null) {
-      _showSnackBar(returnError, isError: true);
-      return;
-    }
+    if (returnError != null) return;
 
     setState(() => _isSubmitting = true);
 
@@ -219,10 +248,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
       Navigator.of(context).pushNamed('/my-requests');
     } catch (error) {
       if (mounted) {
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
+        _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -250,6 +276,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
             )
           : Form(
               key: _formKey,
+              autovalidateMode: AutovalidateMode.disabled,
               child: Column(
                 children: [
                   Expanded(
@@ -258,6 +285,39 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (_userRole == 'student' &&
+                              _hasActiveStudentBorrow) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.amber.shade700,
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Colors.amber.shade800,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'You already have an active borrow request for this item.',
+                                      style: TextStyle(
+                                        color: Colors.amber.shade900,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           _ResourceOverviewCard(resource: resource),
                           const SizedBox(height: 24),
                           Text(
@@ -279,7 +339,9 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                                 ? 'Select date'
                                 : _formatPickerDate(_expectedReturnDate!),
                             onTap: _pickReturnDate,
-                            errorText: _validateReturnDate(_expectedReturnDate),
+                            errorText: _submitted
+                                ? _validateReturnDate(_expectedReturnDate)
+                                : null,
                           ),
                           const SizedBox(height: 16),
                           _QuantityField(
@@ -314,7 +376,12 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                       child: SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: _isSubmitting ? null : _submit,
+                          onPressed:
+                              _isSubmitting ||
+                                  (_userRole == 'student' &&
+                                      _hasActiveStudentBorrow)
+                              ? null
+                              : _submit,
                           icon: _isSubmitting
                               ? SizedBox(
                                   width: 20,
@@ -328,6 +395,9 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                           label: Text(
                             _isSubmitting
                                 ? 'Submitting...'
+                                : _userRole == 'student' &&
+                                      _hasActiveStudentBorrow
+                                ? 'Already Borrowed / Requested'
                                 : 'Submit Borrow Request',
                           ),
                         ),
@@ -566,10 +636,7 @@ class _DateField extends StatelessWidget {
           suffixIcon: const Icon(Icons.calendar_today_outlined),
           errorText: errorText,
         ),
-        child: Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
+        child: Text(value, style: Theme.of(context).textTheme.bodyLarge),
       ),
     );
   }
@@ -622,10 +689,7 @@ class _QuantityField extends StatelessWidget {
                 ),
               ],
             )
-          : Text(
-              '1',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+          : Text('1', style: Theme.of(context).textTheme.titleLarge),
     );
   }
 }

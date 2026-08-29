@@ -6,7 +6,7 @@ import 'screens/activity_screen.dart';
 import 'screens/admin_system_logs_screen.dart';
 import 'screens/admin_user_management_screen.dart';
 import 'screens/custodian_borrow_requests_screen.dart';
-import 'screens/custodian_reports_screen.dart';
+import 'screens/custodian/reports_analytics_screen.dart';
 import 'screens/custodian/learning_resources_screen.dart';
 import 'screens/custodian_return_verification_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -57,7 +57,11 @@ class MyApp extends StatelessWidget {
         '/resources': (context) => const ResourcesScreen(),
         '/return': (context) => const MyBorrowingsScreen(),
         '/my-borrowings': (context) => const MyBorrowingsScreen(),
-        '/my-requests': (context) => const MyRequestsScreen(),
+        '/my-requests': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final initialTab = args is int ? args : 0;
+          return MyRequestsScreen(initialTabIndex: initialTab);
+        },
         '/activity': (context) => const ActivityScreen(),
         '/profile': (context) => const ProfileScreen(),
         '/custodian-resources': (context) => const LearningResourcesScreen(),
@@ -65,7 +69,7 @@ class MyApp extends StatelessWidget {
             const CustodianBorrowRequestsScreen(),
         '/custodian-return-verification': (context) =>
             const CustodianReturnVerificationScreen(),
-        '/custodian-reports': (context) => const CustodianReportsScreen(),
+        '/custodian-reports': (context) => const ReportsAnalyticsScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/admin-users': (context) => const AdminUserManagementScreen(),
         '/admin-logs': (context) => const AdminSystemLogsScreen(),

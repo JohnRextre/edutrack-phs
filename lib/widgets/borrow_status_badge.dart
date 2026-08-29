@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
+import '../services/borrow_service.dart';
 
 /// Displays a colored status badge for a [BorrowTransaction].
 class BorrowStatusBadge extends StatelessWidget {
@@ -40,11 +41,5 @@ String formatBorrowDate(DateTime date) =>
     '${date.month}/${date.day}/${date.year}';
 
 String borrowDueLabel(BorrowTransaction transaction) {
-  if (transaction.effectiveStatus == BorrowTransactionStatus.overdue) {
-    final days = DateTime.now().difference(transaction.expectedReturnDate).inDays;
-    return 'Overdue by $days day${days == 1 ? '' : 's'}';
-  }
-  final days = transaction.expectedReturnDate.difference(DateTime.now()).inDays;
-  if (days <= 0) return 'Due today';
-  return 'Due in $days day${days == 1 ? '' : 's'}';
+  return BorrowService.dueSoonLabel(transaction.expectedReturnDate);
 }

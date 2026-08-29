@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
 import '../models/resource_item.dart';
+import '../services/borrow_service.dart';
 import '../services/resource_service.dart';
 import 'borrow_status_badge.dart';
 
@@ -61,10 +62,7 @@ class BorrowTransactionDetailsModal extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _ResourceHeader(
-                transaction: transaction,
-                resource: resource,
-              ),
+              _ResourceHeader(transaction: transaction, resource: resource),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -151,16 +149,29 @@ class BorrowTransactionDetailsModal extends StatelessWidget {
                   ),
                 ],
               ),
-              if ((transaction.isBorrowRejected || transaction.isReturnRejected) &&
-                  (transaction.rejectionReason?.trim().isNotEmpty ?? false)) ...[
+              if ((transaction.isBorrowRejected ||
+                      transaction.isReturnRejected) &&
+                  (transaction.isExpiredBorrowRejection ||
+                      (transaction.rejectionReason?.trim().isNotEmpty ??
+                          false))) ...[
                 const SizedBox(height: 20),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.08),
+                    color:
+                        (transaction.isExpiredBorrowRejection
+                                ? Colors.amber
+                                : Colors.red)
+                            .withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
+                    border: Border.all(
+                      color:
+                          (transaction.isExpiredBorrowRejection
+                                  ? Colors.amber
+                                  : Colors.red)
+                              .withValues(alpha: 0.25),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,23 +181,66 @@ class BorrowTransactionDetailsModal extends StatelessWidget {
                           Icon(
                             Icons.info_outline,
                             size: 18,
-                            color: Colors.red.shade700,
+                            color: transaction.isExpiredBorrowRejection
+                                ? Colors.amber.shade900
+                                : Colors.red.shade700,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'Rejection Reason',
+                            transaction.isExpiredBorrowRejection
+                                ? 'Expiration Reason'
+                                : 'Rejection Reason',
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: Colors.red.shade700,
+                              color: transaction.isExpiredBorrowRejection
+                                  ? Colors.amber.shade900
+                                  : Colors.red.shade700,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        transaction.rejectionReason!.trim(),
+                        transaction.isExpiredBorrowRejection
+                            ? BorrowService.borrowRequestExpiredDisplayReason
+                            : transaction.rejectionReason!.trim(),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (transaction.isReturnRejected &&
+                  (transaction.requiredReturnType?.trim().isNotEmpty ??
+                      false)) ...[
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.build_circle_outlined,
+                        color: Colors.amber.shade900,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Correction Needed: Returned Type Item Should be: '
+                          '${transaction.requiredReturnType!.trim()}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.amber.shade900,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
                         ),
                       ),
                     ],
@@ -207,10 +261,7 @@ class BorrowTransactionDetailsModal extends StatelessWidget {
 }
 
 class _ResourceHeader extends StatelessWidget {
-  const _ResourceHeader({
-    required this.transaction,
-    this.resource,
-  });
+  const _ResourceHeader({required this.transaction, this.resource});
 
   final BorrowTransaction transaction;
   final ResourceItem? resource;
@@ -332,9 +383,7 @@ class _TimelineCard extends StatelessWidget {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
@@ -410,9 +459,7 @@ class _DetailCard extends StatelessWidget {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(

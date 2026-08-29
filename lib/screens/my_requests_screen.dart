@@ -6,16 +6,21 @@ import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrow_transaction_details_modal.dart';
 import '../widgets/borrower_navigation_bar.dart';
+import 'student/resubmit_appeal_screen.dart';
 
 class MyRequestsScreen extends StatelessWidget {
-  const MyRequestsScreen({super.key});
+  const MyRequestsScreen({super.key, this.initialTabIndex = 0});
+
+  final int initialTabIndex;
 
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final tabIndex = initialTabIndex.clamp(0, 1);
 
     return DefaultTabController(
       length: 2,
+      initialIndex: tabIndex,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('My Requests'),
@@ -27,9 +32,7 @@ class MyRequestsScreen extends StatelessWidget {
           ),
         ),
         body: userId == null
-            ? const Center(
-                child: Text('Please sign in to view your requests.'),
-              )
+            ? const Center(child: Text('Please sign in to view your requests.'))
             : TabBarView(
                 children: [
                   _BorrowRequestsTab(userId: userId),
@@ -75,7 +78,7 @@ class _BorrowRequestsTab extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Text(
-                'No borrow requests yet.\nBrowse Resources to request an item.',
+                'No pending borrow requests.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),
@@ -132,7 +135,7 @@ class _ReturnRequestsTab extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Text(
-                'No return requests yet.\nSubmit a return from My Borrowed Items.',
+                'No pending return requests.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),
@@ -199,13 +202,19 @@ class _BorrowRequestCard extends StatelessWidget {
               Text(
                 'Expected return: ${formatBorrowDate(transaction.expectedReturnDate)}',
               ),
-              if (transaction.isBorrowRejected &&
-                  (transaction.rejectionReason?.trim().isNotEmpty ?? false)) ...[
+              if (transaction.isBorrowRejected) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Reason: ${transaction.rejectionReason!.trim()}',
+                  transaction.isExpiredBorrowRejection
+                      ? BorrowService.borrowRequestExpiredDisplayReason
+                      : (transaction.rejectionReason?.trim().isNotEmpty ??
+                            false)
+                      ? transaction.rejectionReason!.trim()
+                      : 'No reason provided.',
                   style: TextStyle(
-                    color: Colors.red.shade700,
+                    color: transaction.isExpiredBorrowRejection
+                        ? Colors.amber.shade900
+                        : Colors.red.shade700,
                     fontSize: 13,
                   ),
                 ),
@@ -249,25 +258,31 @@ class _ReturnRequestCardState extends State<_ReturnRequestCard> {
   Future<void> _resubmitAppeal() async {
     if (_isResubmitting) return;
 
+    final defaultType =
+        ReturnType.normalizeRequiredReturnType(
+          widget.transaction.requiredReturnType,
+        ) ??
+        ReturnType.paymentProof;
+
     setState(() => _isResubmitting = true);
     try {
-      await widget.borrowService.resubmitReturnRequest(widget.transaction.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Return request resubmitted for verification.'),
+      final selectedAppealType = await showDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) =>
+            _AppealTypeSelectionDialog(defaultType: defaultType),
+      );
+
+      if (!mounted || selectedAppealType == null) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ResubmitAppealScreen(
+            transaction: widget.transaction,
+            appealType: selectedAppealType,
           ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(BorrowService.friendlyErrorMessage(error)),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
-      }
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isResubmitting = false);
     }
@@ -312,16 +327,35 @@ class _ReturnRequestCardState extends State<_ReturnRequestCard> {
                 Text(
                   'Returned: ${formatBorrowDate(transaction.actualReturnDate!)}',
                 ),
-              if (transaction.isReturnRejected &&
-                  (transaction.rejectionReason?.trim().isNotEmpty ?? false)) ...[
+              if (transaction.isReturnRejected) ...[
                 const SizedBox(height: 8),
-                Text(
-                  'Reason: ${transaction.rejectionReason!.trim()}',
-                  style: TextStyle(
-                    color: Colors.red.shade700,
-                    fontSize: 13,
+                if (transaction.rejectionReason?.trim().isNotEmpty ?? false)
+                  Text(
+                    'Reason: ${transaction.rejectionReason!.trim()}',
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 13),
                   ),
-                ),
+                if (transaction.requiredReturnType?.trim().isNotEmpty ??
+                    false) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Text(
+                      'Correction Needed: Returned Type Item Should be: '
+                      '${transaction.requiredReturnType!.trim()}',
+                      style: TextStyle(
+                        color: Colors.amber.shade900,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: 8),
               Row(
@@ -356,4 +390,81 @@ class _ReturnRequestCardState extends State<_ReturnRequestCard> {
       ),
     );
   }
+}
+
+class _AppealTypeSelectionDialog extends StatefulWidget {
+  const _AppealTypeSelectionDialog({required this.defaultType});
+
+  final String defaultType;
+
+  @override
+  State<_AppealTypeSelectionDialog> createState() =>
+      _AppealTypeSelectionDialogState();
+}
+
+class _AppealTypeSelectionDialogState
+    extends State<_AppealTypeSelectionDialog> {
+  late String _selectedType;
+
+  static const List<_AppealOption> _options = [
+    _AppealOption(value: ReturnType.paymentProof, label: 'Resubmit Payment'),
+    _AppealOption(value: ReturnType.repairedProof, label: 'Repaired Item'),
+    _AppealOption(
+      value: ReturnType.replacementProof,
+      label: 'Replacement Item',
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedType = widget.defaultType;
+    if (!_options.any((option) => option.value == _selectedType)) {
+      _selectedType = ReturnType.paymentProof;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Appeal Type'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: _options.map((option) {
+            final selected = _selectedType == option.value;
+            return RadioListTile<String>(
+              value: option.value,
+              groupValue: _selectedType,
+              title: Text(option.label),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedType = value);
+              },
+              selected: selected,
+              contentPadding: EdgeInsets.zero,
+            );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_selectedType),
+          child: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AppealOption {
+  const _AppealOption({required this.value, required this.label});
+
+  final String value;
+  final String label;
 }

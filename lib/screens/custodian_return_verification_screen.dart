@@ -38,11 +38,25 @@ class _CustodianReturnVerificationScreenState
     );
   }
 
-  void _openReturnDetails(BorrowTransaction transaction) {
-    ReturnVerificationDetailsScreen.open(
+  Future<void> _openReturnDetails(BorrowTransaction transaction) async {
+    final result = await ReturnVerificationDetailsScreen.open(
       context,
       transaction: transaction,
     );
+    if (!mounted || result == null) return;
+
+    _showResultSnackBar(result);
+  }
+
+  void _showResultSnackBar(bool accepted) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showSnackBar(
+        accepted
+            ? 'Return accepted and stock restored.'
+            : 'Return rejected.',
+      );
+    });
   }
 
   void _verifyReturn(BorrowTransaction transaction) {
@@ -243,6 +257,7 @@ class _CustodianReturnVerificationScreenState
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: _PendingReturnCard(
+                        key: ValueKey(transaction.id),
                         transaction: transaction,
                         onTap: () => _openReturnDetails(transaction),
                         onVerify: () => _openReturnDetails(transaction),
@@ -261,6 +276,7 @@ class _CustodianReturnVerificationScreenState
 
 class _PendingReturnCard extends StatelessWidget {
   const _PendingReturnCard({
+    super.key,
     required this.transaction,
     required this.onTap,
     required this.onVerify,

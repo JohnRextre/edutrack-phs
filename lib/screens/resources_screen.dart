@@ -394,6 +394,16 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     .map((transaction) => transaction.resourceId)
                     .toSet();
 
+                final activeResourceIds = (borrowSnapshot.data ?? const [])
+                    .where(
+                      (transaction) =>
+                          transaction.userRole.toLowerCase() == 'student' &&
+                          BorrowTransactionStatus.studentActiveBorrowStatuses
+                              .contains(transaction.status),
+                    )
+                    .map((transaction) => transaction.resourceId)
+                    .toSet();
+
                 return StreamBuilder<List<ResourceItem>>(
                   stream: _resourceService.watchResources(),
                   builder: (context, snapshot) {
@@ -409,175 +419,189 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !snapshot.hasData) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
+                      return const Center(child: CircularProgressIndicator());
                     }
 
-                    final filteredResources =
-                        _getFilteredResources(snapshot.data ?? const []);
+                    final filteredResources = _getFilteredResources(
+                      snapshot.data ?? const [],
+                    );
 
                     return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          SearchBar(
-            hintText: 'Search resources',
-            leading: const Icon(Icons.search),
-            trailing: [
-              IconButton(
-                onPressed: _openFilterModal,
-                icon: const Icon(Icons.tune),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Tier 1: Main Category Selection
-          Text(
-            'Resource Category',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'All',
-                label: Text('All'),
-                icon: Icon(Icons.apps_outlined),
-              ),
-              ButtonSegment(
-                value: generalLearningResources,
-                label: Text('General Learning'),
-                icon: Icon(Icons.menu_book_outlined),
-              ),
-              ButtonSegment(
-                value: ictResources,
-                label: Text('ICT'),
-                icon: Icon(Icons.computer_outlined),
-              ),
-              ButtonSegment(
-                value: tvlResources,
-                label: Text('TVL'),
-                icon: Icon(Icons.engineering_outlined),
-              ),
-            ],
-            selected: {_selectedMainCategory},
-            onSelectionChanged: (Set<String> newSelection) {
-              setState(() {
-                _selectedMainCategory = newSelection.first;
-                _selectedSubCategory =
-                    'All'; // Reset sub-category on main category change
-                _selectedItemType =
-                    'All'; // Reset item type on main category change
-              });
-            },
-          ),
-          const SizedBox(height: 20),
-
-          // Tier 2: Sub-Category Filter Chips
-          Text(
-            'Sub-Category',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: subCategories
-                  .map(
-                    (subCategory) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(subCategory),
-                        selected: _selectedSubCategory == subCategory,
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedSubCategory = subCategory;
-                            _selectedItemType =
-                                'All'; // Reset item type when sub-category changes
-                          });
-                        },
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Tier 3: Item Type Filter Chips
-          if (_selectedSubCategory != 'All') ...[
-            Text(
-              'Item Type',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: itemTypes
-                    .map(
-                      (itemType) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(
-                            itemType,
-                            style: TextStyle(
-                              fontSize: itemType.length > 20 ? 11 : null,
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        SearchBar(
+                          hintText: 'Search resources',
+                          leading: const Icon(Icons.search),
+                          trailing: [
+                            IconButton(
+                              onPressed: _openFilterModal,
+                              icon: const Icon(Icons.tune),
                             ),
-                          ),
-                          selected: _selectedItemType == itemType,
-                          onSelected: (selected) {
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Tier 1: Main Category Selection
+                        Text(
+                          'Resource Category',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 10),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                              value: 'All',
+                              label: Text('All'),
+                              icon: Icon(Icons.apps_outlined),
+                            ),
+                            ButtonSegment(
+                              value: generalLearningResources,
+                              label: Text('General Learning'),
+                              icon: Icon(Icons.menu_book_outlined),
+                            ),
+                            ButtonSegment(
+                              value: ictResources,
+                              label: Text('ICT'),
+                              icon: Icon(Icons.computer_outlined),
+                            ),
+                            ButtonSegment(
+                              value: tvlResources,
+                              label: Text('TVL'),
+                              icon: Icon(Icons.engineering_outlined),
+                            ),
+                          ],
+                          selected: {_selectedMainCategory},
+                          onSelectionChanged: (Set<String> newSelection) {
                             setState(() {
-                              _selectedItemType = itemType;
+                              _selectedMainCategory = newSelection.first;
+                              _selectedSubCategory =
+                                  'All'; // Reset sub-category on main category change
+                              _selectedItemType =
+                                  'All'; // Reset item type on main category change
                             });
                           },
                         ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
+                        const SizedBox(height: 20),
 
-          // Available Resources
-          Text(
-            'Available resources',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          if (filteredResources.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'No resources found for the selected category.',
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-              ),
-            )
-          else
-            ...filteredResources.map(
-              (resource) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: _ResourceCard(
-                  resource: resource,
-                  pending: pendingResourceIds.contains(resource.id),
-                  onBorrow: () => _openBorrowRequest(resource),
-                ),
-              ),
-            ),
-        ],
-      );
+                        // Tier 2: Sub-Category Filter Chips
+                        Text(
+                          'Sub-Category',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 10),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: subCategories
+                                .map(
+                                  (subCategory) => Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: FilterChip(
+                                      label: Text(subCategory),
+                                      selected:
+                                          _selectedSubCategory == subCategory,
+                                      onSelected: (selected) {
+                                        setState(() {
+                                          _selectedSubCategory = subCategory;
+                                          _selectedItemType =
+                                              'All'; // Reset item type when sub-category changes
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Tier 3: Item Type Filter Chips
+                        if (_selectedSubCategory != 'All') ...[
+                          Text(
+                            'Item Type',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 10),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: itemTypes
+                                  .map(
+                                    (itemType) => Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: FilterChip(
+                                        label: Text(
+                                          itemType,
+                                          style: TextStyle(
+                                            fontSize: itemType.length > 20
+                                                ? 11
+                                                : null,
+                                          ),
+                                        ),
+                                        selected: _selectedItemType == itemType,
+                                        onSelected: (selected) {
+                                          setState(() {
+                                            _selectedItemType = itemType;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Available Resources
+                        Text(
+                          'Available resources',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 10),
+                        if (filteredResources.isEmpty)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Text(
+                                'No resources found for the selected category.',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          ...filteredResources.map(
+                            (resource) => Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _ResourceCard(
+                                resource: resource,
+                                pending: pendingResourceIds.contains(
+                                  resource.id,
+                                ),
+                                blocked: activeResourceIds.contains(
+                                  resource.id,
+                                ),
+                                onBorrow: () {
+                                  if (activeResourceIds.contains(resource.id)) {
+                                    _showSnackBar(
+                                      'You already have an active borrow request for this item.',
+                                    );
+                                    return;
+                                  }
+                                  _openBorrowRequest(resource);
+                                },
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
                   },
                 );
               },
@@ -591,10 +615,12 @@ class _ResourceCard extends StatelessWidget {
   const _ResourceCard({
     required this.resource,
     required this.pending,
+    required this.blocked,
     required this.onBorrow,
   });
   final ResourceItem resource;
   final bool pending;
+  final bool blocked;
   final VoidCallback onBorrow;
 
   @override
@@ -648,21 +674,45 @@ class _ResourceCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 14),
+              if (blocked) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade700),
+                  ),
+                  child: Text(
+                    'You already have an active borrow request for this item.',
+                    style: TextStyle(
+                      color: Colors.amber.shade900,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: (pending || !resource.isAvailable)
+                  onPressed: (blocked || pending || !resource.isAvailable)
                       ? null
                       : onBorrow,
                   icon: Icon(
-                    pending
+                    blocked
+                        ? Icons.check_circle_outline
+                        : pending
                         ? Icons.pending_actions
                         : resource.isAvailable
                         ? Icons.add_shopping_cart_outlined
                         : Icons.block_outlined,
                   ),
                   label: Text(
-                    pending
+                    blocked
+                        ? 'Already Borrowed / Requested'
+                        : pending
                         ? 'Pending Request'
                         : resource.isAvailable
                         ? 'Request Borrow'
@@ -736,4 +786,3 @@ class _ResourceImage extends StatelessWidget {
     );
   }
 }
-

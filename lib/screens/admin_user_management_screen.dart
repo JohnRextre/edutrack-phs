@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
+import 'admin/add_user_screen.dart';
 
 enum UserRole {
   student('Student', Icons.school_outlined),
@@ -102,11 +102,12 @@ class UserAccount {
     final fullName = (data['fullName'] ?? data['name'] ?? '').toString();
     final schoolId = (data['schoolId'] ?? '').toString();
     final email = (data['email'] ?? '').toString();
-    final department = (data['departmentOrSection'] ??
-            data['department'] ??
-            data['section'] ??
-            '')
-        .toString();
+    final department =
+        (data['departmentOrSection'] ??
+                data['department'] ??
+                data['section'] ??
+                '')
+            .toString();
     final uid = (data['uid'] ?? doc.id).toString();
     final statusReason = data['statusReason']?.toString();
 
@@ -188,9 +189,9 @@ Widget _adminProtectionBanner(BuildContext context, {required String message}) {
         Expanded(
           child: Text(
             message,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.amber.shade900,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.amber.shade900),
           ),
         ),
       ],
@@ -271,6 +272,13 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   }
 
   void _showAddUserModal() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddUserScreen()),
+    );
+  }
+
+  /*
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final schoolIdController = TextEditingController();
@@ -586,6 +594,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       ]);
     });
   }
+  */
 
   void _showEditUserDialog(UserAccount user) {
     final formKey = GlobalKey<FormState>();
@@ -718,9 +727,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     final isProtectedAdmin = _isIctCoordinator(user);
     UserRole selectedRole = isProtectedAdmin
         ? user.role
-        : (_assignableRoles.contains(user.role)
-            ? user.role
-            : UserRole.student);
+        : (_assignableRoles.contains(user.role) ? user.role : UserRole.student);
     var isSaving = false;
 
     showDialog(
@@ -1302,8 +1309,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: StreamBuilder<
-                List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            child: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
               stream: _userService.watchUsers(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -1365,7 +1371,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _UserCard(
                         user: user,
-                        onEdit: () => _afterFrame(() => _showEditUserDialog(user)),
+                        onEdit: () =>
+                            _afterFrame(() => _showEditUserDialog(user)),
                         onChangeRole: () =>
                             _afterFrame(() => _showChangeRoleDialog(user)),
                         onResetPassword: () =>

@@ -8,37 +8,19 @@ import 'admin_dashboard_screen.dart';
 import 'borrower_dashboard_screen.dart';
 import 'custodian_dashboard_screen.dart';
 
-class DashboardScreen extends StatefulWidget {
+class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key, required this.role});
 
   final AccountRole role;
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-class _DashboardScreenState extends State<DashboardScreen> {
-  late AccountRole _selectedRole = widget.role;
-
-  @override
   Widget build(BuildContext context) {
-    final isBorrower = _selectedRole.isBorrower;
+    final isBorrower = role.isBorrower;
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !isBorrower,
         title: const Text('Dashboard'),
         actions: [
-          PopupMenuButton<AccountRole>(
-            tooltip: 'Switch dashboard role',
-            initialValue: _selectedRole,
-            onSelected: (role) => setState(() => _selectedRole = role),
-            icon: const Icon(Icons.swap_horiz),
-            itemBuilder: (context) => AccountRole.values
-                .map(
-                  (role) => PopupMenuItem(value: role, child: Text(role.label)),
-                )
-                .toList(),
-          ),
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.notifications_none),
@@ -54,15 +36,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       drawer: isBorrower
           ? null
           : Drawer(
-              child: _sidebarForRole(context, _selectedRole, mobile: true),
+              child: _sidebarForRole(context, role, mobile: true),
             ),
       body: isBorrower
           ? BorrowerDashboardScreen(
-              role: _selectedRole,
+              role: role,
               onSignOut: () => _signOut(context),
             )
           : _ManagementShell(
-              role: _selectedRole,
+              role: role,
               onSignOut: () => _signOut(context),
             ),
       bottomNavigationBar: isBorrower

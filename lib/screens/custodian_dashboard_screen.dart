@@ -5,6 +5,7 @@ import '../services/borrow_service.dart';
 import '../services/dashboard_service.dart';
 import '../widgets/return_verification_details.dart';
 import 'custodian/add_edit_resource_screen.dart';
+import 'custodian/borrow_request_details_screen.dart';
 import 'custodian/return_verification_details_screen.dart';
 
 class CustodianDashboardScreen extends StatefulWidget {
@@ -48,10 +49,7 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
     } catch (error) {
       if (mounted) {
         Navigator.pop(context);
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
+        _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
       }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -69,21 +67,30 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
     _showSnackBar('Report summary — $summary');
   }
 
-  void _openReturnDetails(
+  Future<void> _openReturnDetails(
     BorrowTransaction transaction, {
     String? section,
-  }) {
-    ReturnVerificationDetailsScreen.open(
+  }) async {
+    final result = await ReturnVerificationDetailsScreen.open(
       context,
       transaction: transaction,
       borrowerSection: section,
     );
+    if (!mounted || result == null) return;
+
+    _showReturnResultSnackBar(result);
   }
 
-  void _verifyReturn(
-    BorrowTransaction transaction, {
-    String? section,
-  }) {
+  void _showReturnResultSnackBar(bool accepted) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showSnackBar(
+        accepted ? 'Return accepted and stock restored.' : 'Return rejected.',
+      );
+    });
+  }
+
+  void _verifyReturn(BorrowTransaction transaction, {String? section}) {
     _openReturnDetails(transaction, section: section);
   }
 
@@ -142,6 +149,8 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
                   rejectionReason: notesController.text.trim().isEmpty
                       ? 'Damage assessment required.'
                       : notesController.text.trim(),
+                  requiredReturnType:
+                      ReturnType.correctiveReturnTypeOptions.first,
                 ),
               );
             },
@@ -156,9 +165,7 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
   Future<void> _openAddResource() async {
     final saved = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
-        builder: (_) => const AddEditResourceScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const AddEditResourceScreen()),
     );
     if (saved == true && mounted) {
       _showSnackBar('Resource saved successfully.');
@@ -176,9 +183,7 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
             final metrics = snapshot.data ?? DashboardMetrics.empty;
             return _PageHeader(
               subtitle: DashboardService.summarySubtitle(),
-              onExport: snapshot.hasData
-                  ? () => _exportReport(metrics)
-                  : null,
+              onExport: snapshot.hasData ? () => _exportReport(metrics) : null,
             );
           },
         ),
@@ -264,46 +269,42 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
 }
 
 class _PageHeader extends StatelessWidget {
-  const _PageHeader({
-    required this.subtitle,
-    required this.onExport,
-  });
+  const _PageHeader({required this.subtitle, required this.onExport});
 
   final String subtitle;
   final VoidCallback? onExport;
 
   @override
   Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Dashboard Overview',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Dashboard Overview',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
-          ),
-          FilledButton.icon(
-            onPressed: onExport,
-            icon: const Icon(Icons.file_download_outlined),
-            label: const Text('Export Report'),
-          ),
-        ],
-      );
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      FilledButton.icon(
+        onPressed: onExport,
+        icon: const Icon(Icons.file_download_outlined),
+        label: const Text('Export Report'),
+      ),
+    ],
+  );
 }
 
 class _SummaryGrid extends StatelessWidget {
@@ -321,7 +322,8 @@ class _SummaryGrid extends StatelessWidget {
         }
 
         final metrics = snapshot.data ?? DashboardMetrics.empty;
-        final loading = snapshot.connectionState == ConnectionState.waiting &&
+        final loading =
+            snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData;
 
         return LayoutBuilder(
@@ -332,25 +334,30 @@ class _SummaryGrid extends StatelessWidget {
               crossAxisCount: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio:
-                  columns == 5 ? 1.55 : (isCompact ? 1.1 : 1.65),
+              childAspectRatio: columns == 5 ? 1.55 : (isCompact ? 1.1 : 1.65),
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
                 _SummaryCard(
                   'Total Resources',
-                  loading ? '—' : DashboardService.formatCount(metrics.totalResources),
+                  loading
+                      ? '—'
+                      : DashboardService.formatCount(metrics.totalResources),
                   Icons.inventory_2_outlined,
                   primary: true,
                 ),
                 _SummaryCard(
                   'Available',
-                  loading ? '—' : DashboardService.formatCount(metrics.available),
+                  loading
+                      ? '—'
+                      : DashboardService.formatCount(metrics.available),
                   Icons.check_circle_outline,
                 ),
                 _SummaryCard(
                   'Borrowed',
-                  loading ? '—' : DashboardService.formatCount(metrics.borrowed),
+                  loading
+                      ? '—'
+                      : DashboardService.formatCount(metrics.borrowed),
                   Icons.book_outlined,
                 ),
                 _SummaryCard(
@@ -414,9 +421,9 @@ class _SummaryCard extends StatelessWidget {
             Text(
               value,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: primary ? colors.onPrimary : colors.onSurface,
-                    fontWeight: FontWeight.w800,
-                  ),
+                color: primary ? colors.onPrimary : colors.onSurface,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -450,35 +457,31 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  if (actionLabel != null)
-                    TextButton(
-                      onPressed: onAction,
-                      child: Text(actionLabel!),
-                    ),
-                ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
               ),
-              const SizedBox(height: 12),
-              child,
+              if (actionLabel != null)
+                TextButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    ),
+  );
 }
 
 class _RecentBorrowRequests extends StatelessWidget {
@@ -534,37 +537,47 @@ class _RequestRow extends StatelessWidget {
   final BorrowTransaction transaction;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor:
-                Theme.of(context).colorScheme.secondaryContainer,
-            child: Text(
-              DashboardService.initialsFromName(transaction.userName),
-              style: Theme.of(context).textTheme.labelSmall,
+  Widget build(BuildContext context) {
+    final section = transaction.userRole == 'teacher' ? 'Teacher' : 'Student';
+    return InkWell(
+      onTap: () => BorrowRequestDetailsScreen.open(
+        context,
+        transaction: transaction,
+        borrowerSection: section,
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              child: Text(
+                DashboardService.initialsFromName(transaction.userName),
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 2,
-            child: Text(
-              transaction.userName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: Text(
+                transaction.userName,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(transaction.resourceName),
-          ),
-          Expanded(
-            child: Text(
-              DashboardService.formatDisplayDate(transaction.borrowDate),
+            Expanded(flex: 2, child: Text(transaction.resourceName)),
+            Expanded(
+              child: Text(
+                DashboardService.formatDisplayDate(transaction.borrowDate),
+              ),
             ),
-          ),
-          const _StatusPill('Pending'),
-        ],
-      );
+            const _StatusPill('Pending'),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusPill extends StatelessWidget {
@@ -611,10 +624,9 @@ class _BorrowingInsights extends StatelessWidget {
 
             final loading =
                 (categorySnapshot.connectionState == ConnectionState.waiting &&
-                        !categorySnapshot.hasData) ||
-                    (monthlySnapshot.connectionState ==
-                            ConnectionState.waiting &&
-                        !monthlySnapshot.hasData);
+                    !categorySnapshot.hasData) ||
+                (monthlySnapshot.connectionState == ConnectionState.waiting &&
+                    !monthlySnapshot.hasData);
 
             if (loading) {
               return const _Panel(
@@ -623,8 +635,7 @@ class _BorrowingInsights extends StatelessWidget {
               );
             }
 
-            final categories =
-                categorySnapshot.data ?? const <CategoryStat>[];
+            final categories = categorySnapshot.data ?? const <CategoryStat>[];
             final monthlyCounts = monthlySnapshot.data ?? const <int>[];
 
             return _Panel(
@@ -684,9 +695,7 @@ class _MiniBars extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         for (final count in counts)
-          _Bar(
-            maxCount == 0 ? 8 : (count / maxCount) * maxHeight,
-          ),
+          _Bar(maxCount == 0 ? 8 : (count / maxCount) * maxHeight),
       ],
     );
   }
@@ -699,13 +708,13 @@ class _Bar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 28,
-        height: height.clamp(8, 102),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-        ),
-      );
+    width: 28,
+    height: height.clamp(8, 102),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+    ),
+  );
 }
 
 class _ProgressLine extends StatelessWidget {
@@ -717,20 +726,20 @@ class _ProgressLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 9),
-        child: Column(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Column(
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(child: Text(label)),
-                Text(value),
-              ],
-            ),
-            const SizedBox(height: 4),
-            LinearProgressIndicator(value: progress, minHeight: 6),
+            Expanded(child: Text(label)),
+            Text(value),
           ],
         ),
-      );
+        const SizedBox(height: 4),
+        LinearProgressIndicator(value: progress, minHeight: 6),
+      ],
+    ),
+  );
 }
 
 class _RecentReturnVerification extends StatelessWidget {
@@ -742,7 +751,7 @@ class _RecentReturnVerification extends StatelessWidget {
 
   final DashboardService dashboardService;
   final void Function(BorrowTransaction transaction, {String? section})
-      onVerifyReturn;
+  onVerifyReturn;
   final ValueChanged<BorrowTransaction> onAssessDamage;
 
   @override
@@ -779,10 +788,16 @@ class _RecentReturnVerification extends StatelessWidget {
                 '/custodian-return-verification',
               ),
               child: returns.isEmpty
-                  ? const _EmptyPanelMessage('No returns awaiting verification.')
+                  ? const _EmptyPanelMessage(
+                      'No returns awaiting verification.',
+                    )
                   : Column(
                       children: [
-                        for (var index = 0; index < returns.length; index++) ...[
+                        for (
+                          var index = 0;
+                          index < returns.length;
+                          index++
+                        ) ...[
                           if (index > 0) const SizedBox(height: 10),
                           _ReturnRow(
                             transaction: returns[index],
@@ -791,7 +806,8 @@ class _RecentReturnVerification extends StatelessWidget {
                               returns[index],
                               section: sections[returns[index].userId],
                             ),
-                            onAssessDamage: () => onAssessDamage(returns[index]),
+                            onAssessDamage: () =>
+                                onAssessDamage(returns[index]),
                           ),
                         ],
                       ],
@@ -1028,9 +1044,7 @@ class _EmptyPanelMessage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         message,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }

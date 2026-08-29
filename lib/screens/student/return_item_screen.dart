@@ -28,8 +28,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
 
   BorrowTransaction get transaction => widget.transaction;
 
-  bool get _isOverdue =>
-      DateTime.now().isAfter(transaction.expectedReturnDate);
+  bool get _isOverdue => DateTime.now().isAfter(transaction.expectedReturnDate);
 
   @override
   void dispose() {
@@ -47,9 +46,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
         transactionId: transaction.id,
         returnType: widget.returnType,
         itemConditionNotes: _itemConditionController.text.trim(),
-        overdueReason: _isOverdue
-            ? _overdueReasonController.text.trim()
-            : null,
+        overdueReason: _isOverdue ? _overdueReasonController.text.trim() : null,
       );
 
       if (!mounted) return;
@@ -161,8 +158,9 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                       decoration: BoxDecoration(
                         border: Border.all(color: colorScheme.outlineVariant),
                         borderRadius: BorderRadius.circular(12),
-                        color: colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.4),
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.4,
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -231,9 +229,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                           )
                         : const Icon(Icons.send_outlined),
                     label: Text(
-                      _isSubmitting
-                          ? 'Submitting...'
-                          : 'Submit Return Request',
+                      _isSubmitting ? 'Submitting...' : 'Submit Return Request',
                     ),
                   ),
                 ),
@@ -247,10 +243,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
 }
 
 class _ItemDetailsCard extends StatelessWidget {
-  const _ItemDetailsCard({
-    required this.transaction,
-    required this.isOverdue,
-  });
+  const _ItemDetailsCard({required this.transaction, required this.isOverdue});
 
   final BorrowTransaction transaction;
   final bool isOverdue;
@@ -286,15 +279,9 @@ class _ItemDetailsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            _DetailRow(
-              label: 'Item Name',
-              value: transaction.resourceName,
-            ),
+            _DetailRow(label: 'Item Name', value: transaction.resourceName),
             const SizedBox(height: 8),
-            _DetailRow(
-              label: 'Item Code',
-              value: transaction.resourceCode,
-            ),
+            _DetailRow(label: 'Item Code', value: transaction.resourceCode),
             const SizedBox(height: 8),
             _DetailRow(
               label: 'Borrow Date',

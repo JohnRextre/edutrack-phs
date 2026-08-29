@@ -17,12 +17,12 @@ class ReturnVerificationDetailsScreen extends StatefulWidget {
   final BorrowTransaction transaction;
   final String? borrowerSection;
 
-  static Future<void> open(
+  static Future<bool?> open(
     BuildContext context, {
     required BorrowTransaction transaction,
     String? borrowerSection,
   }) {
-    return Navigator.push<void>(
+    return Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => ReturnVerificationDetailsScreen(
@@ -66,86 +66,39 @@ class _ReturnVerificationDetailsScreenState
         transaction.resourceId,
       );
       if (!mounted) return;
-      _showSnackBar('Return accepted and stock restored.');
-      Navigator.pop(context);
+      Navigator.of(context).pop(true);
     } catch (error) {
-      if (mounted) {
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (!mounted) return;
+      _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
+      setState(() => _isProcessing = false);
     }
   }
 
   Future<void> _rejectReturn() async {
-    final reasonController = TextEditingController();
-    String? rejectionReason;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reject Return'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Reject the return request from ${transaction.userName} for '
-              '${transaction.resourceName}?',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Rejection reason (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              rejectionReason = reasonController.text;
-              Navigator.pop(dialogContext, true);
-            },
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Reject Return'),
-          ),
-        ],
-      ),
-    ).whenComplete(reasonController.dispose);
-
-    if (confirmed != true || !mounted) return;
-
     if (_isProcessing) return;
-    setState(() => _isProcessing = true);
+
+    final dialogResult = await showDialog<_RejectReturnDialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _RejectReturnDialog(transaction: transaction),
+    );
+
+    if (!mounted || dialogResult == null || !dialogResult.confirmed) return;
+
+    _isProcessing = true;
 
     try {
       await _borrowService.rejectReturn(
         transaction.id,
-        rejectionReason: rejectionReason,
+        rejectionReason: dialogResult.reason ?? '',
+        requiredReturnType: dialogResult.requiredReturnType ?? '',
       );
       if (!mounted) return;
-      _showSnackBar('Return rejected.');
-      Navigator.pop(context);
+      Navigator.of(context).pop(false);
     } catch (error) {
-      if (mounted) {
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (!mounted) return;
+      _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
+      setState(() => _isProcessing = false);
     }
   }
 
@@ -364,9 +317,9 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-      ),
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
     );
   }
 }
@@ -405,6 +358,137 @@ class _DetailRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RejectReturnDialogResult {
+  const _RejectReturnDialogResult.cancelled()
+    : confirmed = false,
+      reason = null,
+      requiredReturnType = null;
+
+  const _RejectReturnDialogResult.confirmed(
+    this.reason,
+    this.requiredReturnType,
+  ) : confirmed = true;
+
+  final bool confirmed;
+  final String? reason;
+  final String? requiredReturnType;
+}
+
+class _RejectReturnDialog extends StatefulWidget {
+  const _RejectReturnDialog({required this.transaction});
+
+  final BorrowTransaction transaction;
+
+  @override
+  State<_RejectReturnDialog> createState() => _RejectReturnDialogState();
+}
+
+class _RejectReturnDialogState extends State<_RejectReturnDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _reasonController;
+  String? _selectedRequiredReturnType;
+
+  BorrowTransaction get transaction => widget.transaction;
+
+  @override
+  void initState() {
+    super.initState();
+    _reasonController = TextEditingController();
+    _selectedRequiredReturnType = transaction.requiredReturnType;
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  void _cancel() {
+    Navigator.of(context).pop(_RejectReturnDialogResult.cancelled());
+  }
+
+  void _confirmReject() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final reason = _reasonController.text.trim();
+    final requiredReturnType = _selectedRequiredReturnType?.trim();
+
+    Navigator.of(
+      context,
+    ).pop(_RejectReturnDialogResult.confirmed(reason, requiredReturnType));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reject Return'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Reject the return request from ${transaction.userName} for '
+                '${transaction.resourceName}?',
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _reasonController,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for Rejection *',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please provide a reason for rejecting this return';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedRequiredReturnType,
+                decoration: const InputDecoration(
+                  labelText: 'Returned Type Item Should be *',
+                  border: OutlineInputBorder(),
+                ),
+                items: ReturnType.correctiveReturnTypeOptions.map((option) {
+                  return DropdownMenuItem<String>(
+                    value: option,
+                    child: Text(option),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => _selectedRequiredReturnType = value);
+                },
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please select a corrective return type.';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _cancel, child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _confirmReject,
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          child: const Text('Reject Return'),
+        ),
+      ],
     );
   }
 }

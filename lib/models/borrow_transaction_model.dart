@@ -25,16 +25,23 @@ abstract final class BorrowTransactionStatus {
     returnRejected,
   ];
 
-  static const List<String> borrowRequestStatuses = [
+  static const List<String> studentActiveBorrowStatuses = [
     pending,
-    borrowRejected,
-    legacyRejected,
+    borrowed,
+    returnPending,
+    returnRejected,
   ];
+
+  static const List<String> borrowRequestStatuses = [pending];
 
   static const List<String> returnRequestStatuses = [
     returnPending,
-    returned,
     returnRejected,
+  ];
+
+  static const List<String> accountActivityStatuses = [
+    returned,
+    borrowRejected,
   ];
 }
 
@@ -52,6 +59,12 @@ abstract final class ReturnType {
     replacementProof,
   ];
 
+  static const List<String> correctiveReturnTypeOptions = [
+    'Payment',
+    'Repaired',
+    'Replacement Return',
+  ];
+
   static const Map<String, String> labels = {
     goodCondition: 'Good Condition Return',
     paymentProof: 'Payment Proof Return - Official/Payment Receipt',
@@ -59,7 +72,32 @@ abstract final class ReturnType {
     replacementProof: 'Replacement Proof Return - Replaced Item Proof',
   };
 
+  static const Map<String, String> correctiveTypeToInternal = {
+    'Payment': paymentProof,
+    'Repaired': repairedProof,
+    'Replacement Return': replacementProof,
+  };
+
+  static const Map<String, String> internalToCorrectiveType = {
+    paymentProof: 'Payment',
+    repairedProof: 'Repaired',
+    replacementProof: 'Replacement Return',
+  };
+
   static String labelFor(String type) => labels[type] ?? type;
+
+  static String? normalizeRequiredReturnType(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    if (all.contains(trimmed)) return trimmed;
+    return correctiveTypeToInternal[trimmed];
+  }
+
+  static String? correctiveTypeLabel(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return internalToCorrectiveType[trimmed] ?? trimmed;
+  }
 }
 
 /// A single resource borrow request / checkout record in `borrow_transactions`.
@@ -81,6 +119,7 @@ class BorrowTransaction {
     this.purpose = '',
     this.rejectionReason,
     this.returnType,
+    this.requiredReturnType,
     this.itemConditionNotes,
     this.overdueReason,
   });
@@ -114,6 +153,9 @@ class BorrowTransaction {
   /// Return proof type selected by the borrower (e.g. good_condition).
   final String? returnType;
 
+  /// Corrective return type requested by the custodian after a rejected return.
+  final String? requiredReturnType;
+
   /// Borrower's description of the item condition at return time.
   final String? itemConditionNotes;
 
@@ -139,10 +181,12 @@ class BorrowTransaction {
       status == BorrowTransactionStatus.borrowRejected ||
       status == BorrowTransactionStatus.legacyRejected;
 
+  bool get isExpiredBorrowRejection =>
+      isBorrowRejected && (rejectionReason?.startsWith('Expired:') ?? false);
+
   bool get isReturnPending => status == BorrowTransactionStatus.returnPending;
 
-  bool get isReturnRejected =>
-      status == BorrowTransactionStatus.returnRejected;
+  bool get isReturnRejected => status == BorrowTransactionStatus.returnRejected;
 
   String get statusLabel {
     switch (effectiveStatus) {
@@ -154,7 +198,7 @@ class BorrowTransaction {
         return 'Overdue';
       case BorrowTransactionStatus.borrowRejected:
       case BorrowTransactionStatus.legacyRejected:
-        return 'Rejected';
+        return isExpiredBorrowRejection ? 'Expired' : 'Rejected';
       case BorrowTransactionStatus.returnPending:
         return 'Pending Verification';
       case BorrowTransactionStatus.returned:
@@ -176,6 +220,9 @@ class BorrowTransaction {
         return Colors.red;
       case BorrowTransactionStatus.borrowRejected:
       case BorrowTransactionStatus.legacyRejected:
+        return isExpiredBorrowRejection
+            ? Colors.amber.shade800
+            : Colors.red.shade700;
       case BorrowTransactionStatus.returnRejected:
         return Colors.red.shade700;
       case BorrowTransactionStatus.returnPending:
@@ -208,6 +255,7 @@ class BorrowTransaction {
       'purpose': purpose,
       if (rejectionReason != null) 'rejectionReason': rejectionReason,
       if (returnType != null) 'returnType': returnType,
+      if (requiredReturnType != null) 'requiredReturnType': requiredReturnType,
       if (itemConditionNotes != null) 'itemConditionNotes': itemConditionNotes,
       if (overdueReason != null) 'overdueReason': overdueReason,
     };
@@ -232,6 +280,7 @@ class BorrowTransaction {
       purpose: (map['purpose'] ?? '').toString(),
       rejectionReason: map['rejectionReason']?.toString(),
       returnType: map['returnType']?.toString(),
+      requiredReturnType: map['requiredReturnType']?.toString(),
       itemConditionNotes: map['itemConditionNotes']?.toString(),
       overdueReason: map['overdueReason']?.toString(),
     );
@@ -263,4 +312,3 @@ class BorrowTransaction {
     return int.tryParse(value?.toString() ?? '') ?? fallback;
   }
 }
-

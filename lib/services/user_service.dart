@@ -7,9 +7,8 @@ import 'auth_service.dart';
 
 /// Firestore-backed user management for the Admin module.
 class UserService {
-  UserService({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  UserService({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -35,6 +34,26 @@ class UserService {
   /// Creates a Firebase Auth account and writes a Firestore profile.
   ///
   /// Uses a secondary Firebase Auth instance so the admin session is preserved.
+  Future<void> createUserAccount({
+    required String fullName,
+    required String schoolId,
+    required String email,
+    required AccountRole role,
+    required String password,
+    String? departmentOrSection,
+    bool isApproved = true,
+  }) {
+    return createUser(
+      fullName: fullName,
+      schoolId: schoolId,
+      email: email,
+      role: role,
+      password: password,
+      departmentOrSection: departmentOrSection,
+      isApproved: isApproved,
+    );
+  }
+
   Future<void> createUser({
     required String fullName,
     required String schoolId,
@@ -42,6 +61,7 @@ class UserService {
     required AccountRole role,
     required String password,
     String? departmentOrSection,
+    bool isApproved = true,
   }) async {
     final trimmedName = fullName.trim();
     final trimmedSchoolId = schoolId.trim();
@@ -72,14 +92,6 @@ class UserService {
         message: 'Password must be at least 6 characters.',
       );
     }
-    if (role == AccountRole.ictCoordinator) {
-      throw FirebaseAuthException(
-        code: 'admin-protected',
-        message:
-            'The ICT Coordinator role cannot be assigned from User Management.',
-      );
-    }
-
     if (!AuthService.isFirebaseAvailable) {
       throw FirebaseAuthException(
         code: 'firebase-unavailable',
@@ -110,6 +122,7 @@ class UserService {
         'role': AuthService.firestoreRoleLabel(role),
         'departmentOrSection': trimmedDepartment,
         'status': 'Active',
+        'isApproved': isApproved,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -131,7 +144,9 @@ class UserService {
   Future<bool> isIctCoordinator(String uid) async {
     final snapshot = await _users.doc(uid.trim()).get();
     if (!snapshot.exists) return false;
-    final role = AuthService.roleFromString(snapshot.data()?['role']?.toString());
+    final role = AuthService.roleFromString(
+      snapshot.data()?['role']?.toString(),
+    );
     return role == 'ICT Coordinator';
   }
 
@@ -155,8 +170,7 @@ class UserService {
       throw FirebaseException(
         plugin: 'cloud_firestore',
         code: 'admin-protected',
-        message:
-            'ICT Coordinator (Admin) account status cannot be altered.',
+        message: 'ICT Coordinator (Admin) account status cannot be altered.',
       );
     }
 
@@ -229,8 +243,7 @@ class UserService {
       throw FirebaseException(
         plugin: 'cloud_firestore',
         code: 'admin-protected',
-        message:
-            'ICT Coordinator (Admin) role cannot be changed.',
+        message: 'ICT Coordinator (Admin) role cannot be changed.',
       );
     }
 

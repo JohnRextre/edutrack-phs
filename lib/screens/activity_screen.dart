@@ -22,7 +22,7 @@ class ActivityScreen extends StatelessWidget {
               child: Text('Please sign in to view your activity history.'),
             )
           : StreamBuilder<List<BorrowTransaction>>(
-              stream: borrowService.getStudentBorrowHistory(userId),
+              stream: borrowService.watchAccountActivities(userId),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -55,9 +55,7 @@ class ActivityScreen extends StatelessWidget {
                           const SizedBox(height: 16),
                           Text(
                             'No activity yet',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 8),
@@ -65,9 +63,9 @@ class ActivityScreen extends StatelessWidget {
                             'Your borrowing and return history will appear here.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -128,8 +126,9 @@ class _ActivityTransactionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
-                backgroundColor:
-                    transaction.statusColor.withValues(alpha: 0.12),
+                backgroundColor: transaction.statusColor.withValues(
+                  alpha: 0.12,
+                ),
                 child: Icon(
                   _iconForStatus(transaction.effectiveStatus),
                   color: transaction.statusColor,
@@ -163,6 +162,17 @@ class _ActivityTransactionCard extends StatelessWidget {
                       Text(
                         'Returned: ${formatBorrowDate(transaction.actualReturnDate!)}',
                       ),
+                    if (transaction.isExpiredBorrowRejection) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Property Custodian didn\'t take action in time.',
+                        style: TextStyle(
+                          color: Colors.amber.shade900,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerRight,

@@ -270,6 +270,19 @@ class AuthService {
     return accountRoleFromFirestoreValue(roleName);
   }
 
+  /// Live profile stream for the signed-in user.
+  static Stream<UserModel?> watchCurrentUserProfile() {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(null);
+
+    return _firestore.collection(usersCollection).doc(user.uid).snapshots().map(
+      (doc) {
+        if (!doc.exists) return null;
+        return UserModel.fromFirestore(doc);
+      },
+    );
+  }
+
   Future<String> _resolveLoginEmail(String identifier) async {
     if (identifier.contains('@')) {
       return identifier;
