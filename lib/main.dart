@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'models/account_role.dart';
 import 'screens/admin_dashboard_screen.dart';
-import 'screens/activity_screen.dart';
+import 'screens/account_activities_screen.dart';
 import 'screens/admin_system_logs_screen.dart';
 import 'screens/admin_user_management_screen.dart';
 import 'screens/custodian_borrow_requests_screen.dart';
@@ -62,7 +62,7 @@ class MyApp extends StatelessWidget {
           final initialTab = args is int ? args : 0;
           return MyRequestsScreen(initialTabIndex: initialTab);
         },
-        '/activity': (context) => const ActivityScreen(),
+        '/activity': (context) => const AccountActivitiesScreen(),
         '/profile': (context) => const ProfileScreen(),
         '/custodian-resources': (context) => const LearningResourcesScreen(),
         '/custodian-borrow-requests': (context) =>

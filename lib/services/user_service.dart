@@ -224,6 +224,39 @@ class UserService {
     });
   }
 
+  /// Updates editable profile fields while preserving read-only account data.
+  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
+    final trimmedUid = uid.trim();
+    if (trimmedUid.isEmpty) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-uid',
+        message: 'User id is missing.',
+      );
+    }
+
+    final updates = <String, dynamic>{};
+    for (final key in ['firstName', 'lastName', 'gradeSection', 'department']) {
+      if (data.containsKey(key)) {
+        final value = data[key]?.toString().trim() ?? '';
+        if (value.isEmpty && key != 'department') {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'invalid-profile',
+            message: 'Please complete all required profile fields.',
+          );
+        }
+        updates[key] = value;
+      }
+    }
+    if (data.containsKey('phoneNumber')) {
+      updates['phoneNumber'] = data['phoneNumber']?.toString().trim() ?? '';
+    }
+    if (updates.isEmpty) return;
+    updates['updatedAt'] = Timestamp.now();
+    await _users.doc(trimmedUid).update(updates);
+  }
+
   /// Updates only the system role.
   /// ICT Coordinator roles are protected and cannot be assigned or removed here.
   Future<void> updateUserRole({

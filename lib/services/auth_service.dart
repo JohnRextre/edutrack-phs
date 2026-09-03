@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
+import '../firebase_options.dart';
 import '../models/account_role.dart';
 import '../models/user_model.dart';
 
@@ -16,13 +18,27 @@ class AuthService {
 
   static Future<void> initialize() async {
     try {
-      await Firebase.initializeApp();
-    } catch (_) {
-      // Firebase config is expected to be added in the Android/iOS/web setup.
+      if (kIsWeb && DefaultFirebaseOptions.web.appId.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'firebase-unavailable',
+          message:
+              'Missing FIREBASE_WEB_APP_ID. Register a Web App in Firebase and run with --dart-define=FIREBASE_WEB_APP_ID=1:...:web:....',
+        );
+      }
+      await Firebase.initializeApp(
+        options: kIsWeb ? DefaultFirebaseOptions.web : null,
+      );
+    } on FirebaseException catch (error) {
+      throw FirebaseAuthException(
+        code: 'firebase-unavailable',
+        message: 'Firebase could not be initialized: ${error.message}',
+      );
     }
   }
 
   static bool get isFirebaseAvailable => Firebase.apps.isNotEmpty;
+
+  static Future<void> signOut() => _auth.signOut();
 
   static String roleFromString(String? roleName) {
     final normalized = (roleName ?? '').trim();
@@ -220,7 +236,35 @@ class AuthService {
       );
     }
 
-    final resolvedEmail = await _resolveLoginEmail(trimmedEmail);
+    final account = await _resolveLoginAccount(trimmedEmail);
+    final profileData = account.data();
+    final status = profileData['status']?.toString().trim().toLowerCase();
+    if (profileData['isApproved'] == false ||
+        status == 'pending' ||
+        status == 'pending_approval') {
+      throw FirebaseAuthException(
+        code: 'account-not-approved',
+        message: 'Your account is pending registration approval by the Admin.',
+      );
+    }
+
+    final storedRole = accountRoleFromFirestoreValue(profileData['role']);
+    if (storedRole != selectedRole) {
+      throw FirebaseAuthException(
+        code: 'role-mismatch',
+        message:
+            'Account not registered as ${selectedRole.label}. Please check your Account Type or Credentials.',
+      );
+    }
+
+    final resolvedEmail = profileData['email']?.toString().trim();
+    if (resolvedEmail == null || resolvedEmail.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'No account found with this School ID or Email.',
+      );
+    }
+
     final credential = await _auth.signInWithEmailAndPassword(
       email: resolvedEmail,
       password: password,
@@ -231,22 +275,6 @@ class AuthService {
       throw FirebaseAuthException(
         code: 'login-failed',
         message: 'Unable to log in. Please try again.',
-      );
-    }
-
-    final profile = await _firestore
-        .collection(usersCollection)
-        .doc(user.uid)
-        .get();
-    final firestoreRole = profile.data()?['role'];
-    final storedRole = accountRoleFromFirestoreValue(firestoreRole);
-
-    if (storedRole != selectedRole) {
-      await _auth.signOut();
-      throw FirebaseAuthException(
-        code: 'role-mismatch',
-        message:
-            'This account is not registered as a ${selectedRole.label}. Please select the correct account type.',
       );
     }
 
@@ -283,33 +311,23 @@ class AuthService {
     );
   }
 
-  Future<String> _resolveLoginEmail(String identifier) async {
-    if (identifier.contains('@')) {
-      return identifier;
-    }
-
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>> _resolveLoginAccount(
+    String identifier,
+  ) async {
+    final field = identifier.contains('@') ? 'email' : 'schoolId';
     final querySnapshot = await _firestore
         .collection(usersCollection)
-        .where('schoolId', isEqualTo: identifier)
+        .where(field, isEqualTo: identifier)
         .limit(1)
         .get();
 
     if (querySnapshot.docs.isEmpty) {
       throw FirebaseAuthException(
         code: 'user-not-found',
-        message: 'No user was found for this School ID.',
+        message: 'No account found with this School ID or Email.',
       );
     }
-
-    final email = querySnapshot.docs.first.data()['email']?.toString();
-    if (email == null || email.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'user-not-found',
-        message: 'No email was found for this account.',
-      );
-    }
-
-    return email;
+    return querySnapshot.docs.first;
   }
 
   static String friendlyErrorMessage(Object error) {
@@ -324,8 +342,12 @@ class AuthService {
         case 'invalid-email':
           return 'Please enter a valid email address.';
         case 'wrong-password':
+        case 'invalid-credential':
+          return 'Incorrect password. Please try again.';
         case 'user-not-found':
-          return 'Incorrect email or password. Please try again.';
+          return 'No account found with this School ID or Email.';
+        case 'account-not-approved':
+          return 'Your account is pending registration approval by the Admin.';
         case 'role-mismatch':
           return error.message ??
               'The selected account type does not match this user.';

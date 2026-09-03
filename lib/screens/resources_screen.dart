@@ -21,14 +21,12 @@ class ResourcesScreen extends StatefulWidget {
 class _ResourcesScreenState extends State<ResourcesScreen> {
   final ResourceService _resourceService = ResourceService();
   final BorrowService _borrowService = BorrowService();
+  final TextEditingController _searchController = TextEditingController();
 
   // Tier 1: Main Category Selection
   String _selectedMainCategory = 'All';
 
-  // Tier 2: Sub-Category Selection
   String _selectedSubCategory = 'All';
-
-  // Tier 3: Item Type Filter
   String _selectedItemType = 'All';
 
   // Availability Filter
@@ -37,113 +35,31 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
   // Sorting Option
   String _selectedSortOption = 'Name (A-Z)';
 
-  // Get sub-categories based on selected main category
-  List<String> _getSubCategories(String mainCategory) {
-    if (mainCategory == 'All') {
-      // Return all sub-categories from all main categories
-      return [
-        'All',
-        generalLearning,
-        scienceLab,
-        mathematics,
-        audioVisual,
-        sports,
-        artsDesign,
-        generalInfrastructure,
-        vocationalTechnicalTools,
-        homeEconomics,
-        industrialArts,
-        agriFisheryArts,
-      ];
-    }
+  bool _isGridView = true;
 
-    switch (mainCategory) {
-      case generalLearningResources:
-        return [
-          'All',
-          generalLearning,
-          scienceLab,
-          mathematics,
-          audioVisual,
-          sports,
-          artsDesign,
-        ];
-      case ictResources:
-        return ['All', generalInfrastructure, vocationalTechnicalTools];
-      case tvlResources:
-        return ['All', homeEconomics, industrialArts, agriFisheryArts];
-      default:
-        return ['All'];
-    }
-  }
-
-  // Get item types based on selected sub-category
-  List<String> _getItemTypes(String subCategory) {
-    if (subCategory == 'All') {
-      // Return all item types for the current main category
-      if (_selectedMainCategory == 'All') {
-        // Return all item types from all categories
-        return [
-          'All',
-          ...generalLearningItemTypes,
-          ...scienceLabItemTypes,
-          ...mathematicsItemTypes,
-          ...audioVisualItemTypes,
-          ...sportsItemTypes,
-          ...artsDesignItemTypes,
-          ...generalInfrastructureItemTypes,
-          ...vocationalTechnicalItemTypes,
-          ...homeEconomicsItemTypes,
-          ...industrialArtsItemTypes,
-          ...agriFisheryArtsItemTypes,
-        ];
-      }
-
-      switch (_selectedMainCategory) {
-        case generalLearningResources:
-          return [
-            'All',
-            ...generalLearningItemTypes,
-            ...scienceLabItemTypes,
-            ...mathematicsItemTypes,
-            ...audioVisualItemTypes,
-            ...sportsItemTypes,
-            ...artsDesignItemTypes,
-          ];
-        case ictResources:
-          return [
-            'All',
-            ...generalInfrastructureItemTypes,
-            ...vocationalTechnicalItemTypes,
-          ];
-        case tvlResources:
-          return [
-            'All',
-            ...homeEconomicsItemTypes,
-            ...industrialArtsItemTypes,
-            ...agriFisheryArtsItemTypes,
-          ];
-        default:
-          return ['All'];
-      }
-    }
-    return ['All', ...getItemTypesForSubCategory(subCategory)];
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   // Filter and sort resources
   List<ResourceItem> _getFilteredResources(List<ResourceItem> allResources) {
     List<ResourceItem> filtered = allResources.where((item) {
+      final query = _searchController.text.trim().toLowerCase();
+      final matchesSearch =
+          query.isEmpty ||
+          item.name.toLowerCase().contains(query) ||
+          item.code.toLowerCase().contains(query);
+
       // Tier 1 filter
       final matchesMainCategory =
           _selectedMainCategory == 'All' ||
           item.mainCategory == _selectedMainCategory;
 
-      // Tier 2 filter
       final matchesSubCategory =
           _selectedSubCategory == 'All' ||
           item.subCategory == _selectedSubCategory;
-
-      // Tier 3 filter
       final matchesItemType =
           _selectedItemType == 'All' || item.itemType == _selectedItemType;
 
@@ -153,7 +69,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
           (_selectedAvailability == 'Available Only' && item.isAvailable) ||
           (_selectedAvailability == 'On Loan / Borrowed' && !item.isAvailable);
 
-      return matchesMainCategory &&
+      return matchesSearch &&
+          matchesMainCategory &&
           matchesSubCategory &&
           matchesItemType &&
           matchesAvailability;
@@ -164,6 +81,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
       case 'Name (A-Z)':
         filtered.sort((a, b) => a.name.compareTo(b.name));
         break;
+      case 'Most Popular / Borrowed':
       case 'Most Borrowed':
         // For demo purposes, we'll just keep the original order
         // In a real app, this would sort by borrow count
@@ -181,147 +99,106 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
   }
 
   void _openFilterModal() {
+    var availability = _selectedAvailability;
+    var sort = _selectedSortOption;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => FractionallySizedBox(
-          heightFactor: 0.85,
-          child: Container(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Filters',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 20),
-
-                        // Availability Filter
-                        Text(
-                          'Availability',
-                          style: Theme.of(context).textTheme.titleMedium,
+        builder: (context, setModalState) => Material(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                16,
+                24,
+                16 + MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Filter Resources',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          children:
-                              ['All', 'Available Only', 'On Loan / Borrowed']
-                                  .map(
-                                    (option) => FilterChip(
-                                      label: Text(option),
-                                      selected: _selectedAvailability == option,
-                                      onSelected: (selected) {
-                                        setModalState(() {
-                                          _selectedAvailability = option;
-                                        });
-                                      },
-                                    ),
-                                  )
-                                  .toList(),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Tier 3: Item Type Filter (Horizontal Scrollable)
-                        Text(
-                          'Item Type',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 10),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: _getItemTypes(_selectedSubCategory)
-                                .map(
-                                  (itemType) => Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: FilterChip(
-                                      label: Text(
-                                        itemType,
-                                        style: TextStyle(
-                                          fontSize: itemType.length > 20
-                                              ? 11
-                                              : null,
-                                        ),
-                                      ),
-                                      selected: _selectedItemType == itemType,
-                                      onSelected: (selected) {
-                                        setModalState(() {
-                                          _selectedItemType = itemType;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Sorting Options
-                        Text(
-                          'Sort By',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          children:
-                              ['Name (A-Z)', 'Most Borrowed', 'Recently Added']
-                                  .map(
-                                    (option) => FilterChip(
-                                      label: Text(option),
-                                      selected: _selectedSortOption == option,
-                                      onSelected: (selected) {
-                                        setModalState(() {
-                                          _selectedSortOption = option;
-                                        });
-                                      },
-                                    ),
-                                  )
-                                  .toList(),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
+                      ),
+                      TextButton(
+                        onPressed: () => setModalState(() {
+                          availability = 'All';
+                          sort = 'Name (A-Z)';
+                        }),
+                        child: const Text('Reset All'),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
                   ),
-                ),
-
-                // Apply Button
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
+                  const SizedBox(height: 16),
+                  Text(
+                    'Availability',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () {
-                        setState(() {});
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Apply Filters'),
-                    ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['All', 'Available Only'].map((option) {
+                      return ChoiceChip(
+                        label: Text(option),
+                        selected: availability == option,
+                        onSelected: (_) =>
+                            setModalState(() => availability = option),
+                      );
+                    }).toList(),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Sort By',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children:
+                        [
+                              'Name (A-Z)',
+                              'Most Popular / Borrowed',
+                              'Recently Added',
+                            ]
+                            .map(
+                              (option) => ChoiceChip(
+                                label: Text(option),
+                                selected: sort == option,
+                                onSelected: (_) =>
+                                    setModalState(() => sort = option),
+                              ),
+                            )
+                            .toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedAvailability = availability;
+                        _selectedSortOption = sort;
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Apply Filters'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -375,11 +252,16 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     );
   }
 
+  void _borrowResource(ResourceItem resource, bool blocked) {
+    if (blocked) {
+      _showSnackBar('You already have an active borrow request for this item.');
+      return;
+    }
+    _openBorrowRequest(resource);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final subCategories = _getSubCategories(_selectedMainCategory);
-    final itemTypes = _getItemTypes(_selectedSubCategory);
-
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
@@ -430,61 +312,75 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                       padding: const EdgeInsets.all(20),
                       children: [
                         SearchBar(
+                          controller: _searchController,
+                          onChanged: (_) => setState(() {}),
                           hintText: 'Search resources',
                           leading: const Icon(Icons.search),
                           trailing: [
+                            if (_searchController.text.isNotEmpty)
+                              IconButton(
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.close),
+                              ),
                             IconButton(
+                              tooltip: 'Filter resources',
                               onPressed: _openFilterModal,
                               icon: const Icon(Icons.tune),
                             ),
                           ],
                         ),
                         const SizedBox(height: 20),
-
-                        // Tier 1: Main Category Selection
                         Text(
                           'Resource Category',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 10),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(
-                              value: 'All',
-                              label: Text('All'),
-                              icon: Icon(Icons.apps_outlined),
-                            ),
-                            ButtonSegment(
-                              value: generalLearningResources,
-                              label: Text('General Learning'),
-                              icon: Icon(Icons.menu_book_outlined),
-                            ),
-                            ButtonSegment(
-                              value: ictResources,
-                              label: Text('ICT'),
-                              icon: Icon(Icons.computer_outlined),
-                            ),
-                            ButtonSegment(
-                              value: tvlResources,
-                              label: Text('TVL'),
-                              icon: Icon(Icons.engineering_outlined),
-                            ),
-                          ],
-                          selected: {_selectedMainCategory},
-                          onSelectionChanged: (Set<String> newSelection) {
-                            setState(() {
-                              _selectedMainCategory = newSelection.first;
-                              _selectedSubCategory =
-                                  'All'; // Reset sub-category on main category change
-                              _selectedItemType =
-                                  'All'; // Reset item type on main category change
-                            });
-                          },
+                        SizedBox(
+                          height: 44,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children:
+                                [
+                                  ('All', 'All', Icons.apps_outlined),
+                                  (
+                                    generalLearningResources,
+                                    'General Learning',
+                                    Icons.menu_book_outlined,
+                                  ),
+                                  (
+                                    ictResources,
+                                    'ICT',
+                                    Icons.computer_outlined,
+                                  ),
+                                  (
+                                    tvlResources,
+                                    'TVL',
+                                    Icons.engineering_outlined,
+                                  ),
+                                ].map((category) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      avatar: Icon(category.$3, size: 18),
+                                      label: Text(category.$2),
+                                      selected:
+                                          _selectedMainCategory == category.$1,
+                                      onSelected: (_) => setState(() {
+                                        _selectedMainCategory = category.$1;
+                                        _selectedSubCategory = 'All';
+                                        _selectedItemType = 'All';
+                                      }),
+                                    ),
+                                  );
+                                }).toList(),
+                          ),
                         ),
                         const SizedBox(height: 20),
-
-                        // Tier 2: Sub-Category Filter Chips
                         Text(
                           'Sub-Category',
                           style: Theme.of(context).textTheme.titleMedium
@@ -494,30 +390,34 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: Row(
-                            children: subCategories
-                                .map(
-                                  (subCategory) => Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: FilterChip(
-                                      label: Text(subCategory),
-                                      selected:
-                                          _selectedSubCategory == subCategory,
-                                      onSelected: (selected) {
-                                        setState(() {
-                                          _selectedSubCategory = subCategory;
-                                          _selectedItemType =
-                                              'All'; // Reset item type when sub-category changes
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            children:
+                                {
+                                      'All',
+                                      ...ResourceTaxonomy.filterSubCategories(
+                                        _selectedMainCategory,
+                                      ),
+                                    }
+                                    .map(
+                                      (subCategory) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
+                                        child: FilterChip(
+                                          label: Text(subCategory),
+                                          selected:
+                                              _selectedSubCategory ==
+                                              subCategory,
+                                          onSelected: (_) => setState(() {
+                                            _selectedSubCategory = subCategory;
+                                            _selectedItemType = 'All';
+                                          }),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
                           ),
                         ),
                         const SizedBox(height: 16),
-
-                        // Tier 3: Item Type Filter Chips
                         if (_selectedSubCategory != 'All') ...[
                           Text(
                             'Item Type',
@@ -528,53 +428,91 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                           SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: Row(
-                              children: itemTypes
-                                  .map(
-                                    (itemType) => Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: FilterChip(
-                                        label: Text(
-                                          itemType,
-                                          style: TextStyle(
-                                            fontSize: itemType.length > 20
-                                                ? 11
-                                                : null,
+                              children:
+                                  [
+                                        'All',
+                                        ...getItemTypesForSubCategory(
+                                          _selectedSubCategory,
+                                        ),
+                                      ]
+                                      .map(
+                                        (itemType) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          child: FilterChip(
+                                            label: Text(itemType),
+                                            selected:
+                                                _selectedItemType == itemType,
+                                            onSelected: (_) => setState(
+                                              () =>
+                                                  _selectedItemType = itemType,
+                                            ),
                                           ),
                                         ),
-                                        selected: _selectedItemType == itemType,
-                                        onSelected: (selected) {
-                                          setState(() {
-                                            _selectedItemType = itemType;
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                                      )
+                                      .toList(),
                             ),
                           ),
                           const SizedBox(height: 16),
                         ],
-
-                        // Available Resources
-                        Text(
-                          'Available resources',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Available resources',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: _isGridView ? 'List view' : 'Grid view',
+                              onPressed: () =>
+                                  setState(() => _isGridView = !_isGridView),
+                              icon: Icon(
+                                _isGridView
+                                    ? Icons.view_list_outlined
+                                    : Icons.grid_view_outlined,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 10),
                         if (filteredResources.isEmpty)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Text(
-                                'No resources found for the selected category.',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
-                              ),
+                          const Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text(
+                              'No resources found for the selected category.',
                             ),
+                          )
+                        else if (_isGridView)
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: filteredResources.length,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: .72,
+                                ),
+                            itemBuilder: (context, index) {
+                              final resource = filteredResources[index];
+                              return _ResourceGridCard(
+                                resource: resource,
+                                pending: pendingResourceIds.contains(
+                                  resource.id,
+                                ),
+                                blocked: activeResourceIds.contains(
+                                  resource.id,
+                                ),
+                                onBorrow: () => _borrowResource(
+                                  resource,
+                                  activeResourceIds.contains(resource.id),
+                                ),
+                              );
+                            },
                           )
                         else
                           ...filteredResources.map(
@@ -588,15 +526,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                 blocked: activeResourceIds.contains(
                                   resource.id,
                                 ),
-                                onBorrow: () {
-                                  if (activeResourceIds.contains(resource.id)) {
-                                    _showSnackBar(
-                                      'You already have an active borrow request for this item.',
-                                    );
-                                    return;
-                                  }
-                                  _openBorrowRequest(resource);
-                                },
+                                onBorrow: () => _borrowResource(
+                                  resource,
+                                  activeResourceIds.contains(resource.id),
+                                ),
                               ),
                             ),
                           ),
@@ -609,6 +542,93 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
       bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 1),
     );
   }
+}
+
+class _ResourceGridCard extends StatelessWidget {
+  const _ResourceGridCard({
+    required this.resource,
+    required this.pending,
+    required this.blocked,
+    required this.onBorrow,
+  });
+
+  final ResourceItem resource;
+  final bool pending;
+  final bool blocked;
+  final VoidCallback onBorrow;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 110,
+          width: double.infinity,
+          child: _ResourceImage(resource: resource, height: 110),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  resource.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  resource.code,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  resource.isAvailable
+                      ? '${resource.availableQuantity} Available'
+                      : 'Out of Stock',
+                  style: TextStyle(
+                    color: resource.isAvailable
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: (blocked || pending || !resource.isAvailable)
+                        ? null
+                        : onBorrow,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                    ),
+                    child: Text(
+                      blocked
+                          ? 'Already Borrowed'
+                          : pending
+                          ? 'Pending'
+                          : resource.isAvailable
+                          ? 'Request Borrow'
+                          : 'Unavailable',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ResourceCard extends StatelessWidget {
@@ -624,108 +644,105 @@ class _ResourceCard extends StatelessWidget {
   final VoidCallback onBorrow;
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 190,
-          width: double.infinity,
-          child: _ResourceImage(resource: resource, height: 190),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 8,
-                children: [
-                  Chip(
-                    label: Text(resource.subCategory),
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primaryContainer,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final availabilityLabel = resource.isAvailable
+        ? '${resource.availableQuantity} Available'
+        : 'Out of Stock';
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 190,
+            width: double.infinity,
+            child: _ResourceImage(resource: resource, height: 190),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  resource.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-                  Chip(
-                    label: Text(
-                      resource.isAvailable
-                          ? '${resource.availableQuantity} Available'
-                          : 'Out of Stock',
-                    ),
-                    backgroundColor: resource.isAvailable
-                        ? Colors.green.withValues(alpha: 0.2)
-                        : Colors.red.withValues(alpha: 0.2),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                resource.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                resource.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 14),
-              if (blocked) ...[
+                ),
+                const SizedBox(height: 5),
                 Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amber.shade700),
+                    color: colors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'You already have an active borrow request for this item.',
+                    resource.code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.amber.shade900,
-                      fontSize: 12,
+                      color: colors.onSecondaryContainer,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-              ],
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: (blocked || pending || !resource.isAvailable)
-                      ? null
-                      : onBorrow,
-                  icon: Icon(
-                    blocked
-                        ? Icons.check_circle_outline
-                        : pending
-                        ? Icons.pending_actions
-                        : resource.isAvailable
-                        ? Icons.add_shopping_cart_outlined
-                        : Icons.block_outlined,
-                  ),
+                const SizedBox(height: 7),
+                Chip(
                   label: Text(
-                    blocked
-                        ? 'Already Borrowed / Requested'
-                        : pending
-                        ? 'Pending Request'
-                        : resource.isAvailable
-                        ? 'Request Borrow'
-                        : 'Unavailable',
+                    availabilityLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  labelStyle: TextStyle(
+                    color: resource.isAvailable
+                        ? Colors.green.shade800
+                        : Colors.red.shade800,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  backgroundColor: resource.isAvailable
+                      ? Colors.green.withValues(alpha: .12)
+                      : Colors.red.withValues(alpha: .12),
+                  side: BorderSide.none,
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: (blocked || pending || !resource.isAvailable)
+                        ? null
+                        : onBorrow,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    child: Text(
+                      blocked
+                          ? 'Already Borrowed'
+                          : pending
+                          ? 'Pending'
+                          : resource.isAvailable
+                          ? 'Request Borrow'
+                          : 'Unavailable',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class _ResourceImage extends StatelessWidget {

@@ -66,7 +66,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
                     padding: const EdgeInsets.only(right: 16),
                     child: FilledButton(
                       onPressed: _openLogin,
-                      child: const Text('Sign In / Portal Login'),
+                      child: const Text('Portal Login'),
                     ),
                   ),
                 ] else ...[
@@ -81,7 +81,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
                     icon: const Icon(Icons.info_outline),
                   ),
                   IconButton(
-                    tooltip: 'Sign In / Portal Login',
+                    tooltip: 'Portal Login',
                     onPressed: _openLogin,
                     icon: const Icon(Icons.login),
                   ),
@@ -104,21 +104,20 @@ class _HomepageScreenState extends State<HomepageScreen> {
                         const SizedBox(height: 80),
                         _SectionTitle(
                           key: _featuresKey,
-                          eyebrow: 'CORE SYSTEM CAPABILITIES',
-                          title:
-                              'Made for responsible school resource management',
+                          eyebrow: 'SYSTEM FEATURES',
+                          title: 'System Features',
                           description:
-                              'One streamlined workflow from availability checking to verified returns.',
+                              'How EduTrack PHS helps manage school equipment and books.',
                         ),
                         const SizedBox(height: 28),
                         const _FeaturesGrid(),
                         const SizedBox(height: 84),
                         _SectionTitle(
                           key: _aboutKey,
-                          eyebrow: 'ROLE ACCESS OVERVIEW',
-                          title: 'The right tools for every school role',
+                          eyebrow: 'USER ROLES',
+                          title: 'User Roles',
                           description:
-                              'EduTrack PHS brings borrowers, custodians, and administrators into one transparent system.',
+                              'Designed for students, teachers, custodians, and admins.',
                         ),
                         const SizedBox(height: 28),
                         const _RolesGrid(),
@@ -145,7 +144,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
                       runSpacing: 12,
                       children: [
                         Text(
-                          'EduTrack PHS · Supporting SDG 4: Quality Education',
+                          'EduTrack PHS · High School Resource Management',
                           style: TextStyle(
                             color: colors.onPrimaryContainer,
                             fontWeight: FontWeight.w600,
@@ -205,7 +204,7 @@ class _Hero extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            'Streamlined School Resource Inventory, Borrowing & Return Verification',
+            'High School Resource Inventory & Borrowing System',
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
               fontWeight: FontWeight.bold,
               color: colors.onSurface,
@@ -215,7 +214,7 @@ class _Hero extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Text(
-              'A centralized system designed for Junior and Senior High Schools to manage textbooks, science equipment, ICT devices, and lab tools efficiently.',
+              'Check available equipment, submit borrow requests, and verify returns with photo proof.',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 height: 1.45,
                 color: colors.onSurfaceVariant,
@@ -234,7 +233,7 @@ class _Hero extends StatelessWidget {
               ),
               OutlinedButton(
                 onPressed: onFeatures,
-                child: const Text('Explore Features'),
+                child: const Text('View Features'),
               ),
             ],
           ),
@@ -297,18 +296,18 @@ class _FeaturesGrid extends StatelessWidget {
             width: width,
             child: const _InfoCard(
               icon: Icons.inventory_2_outlined,
-              title: 'Resource Inventory Browsing',
+              title: 'Browse Available Equipment',
               body:
-                  'Search and check real-time availability of textbooks, science kits, and ICT equipment categorized by grade level and track.',
+                  'Check real-time stock for textbooks, ICT devices, science kits, and lab tools.',
             ),
           ),
           SizedBox(
             width: width,
             child: const _InfoCard(
               icon: Icons.assignment_outlined,
-              title: 'Streamlined Borrowing Workflow',
+              title: 'Simple Borrowing Process',
               body:
-                  'Digital request submission and tracking for students and teachers with due-date reminders.',
+                  'Submit request forms online and track your active borrowings with due-date alerts.',
             ),
           ),
           SizedBox(
@@ -317,7 +316,7 @@ class _FeaturesGrid extends StatelessWidget {
               icon: Icons.add_a_photo_outlined,
               title: 'Photo Return Verification',
               body:
-                  'Upload photo proof upon returning items to verify condition before closing transactions, ensuring transparency and proper care.',
+                  'Upload a photo when returning items so Property Custodians can verify item condition.',
             ),
           ),
         ],
@@ -344,7 +343,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.school_outlined,
               title: 'Students & Teachers',
               body:
-                  'Easy catalog search, request tracking, and photo return submission.',
+                  'Search resources, request items, track due dates, and upload return photos.',
             ),
           ),
           SizedBox(
@@ -353,7 +352,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.inventory_outlined,
               title: 'Property Custodians',
               body:
-                  'Centralized inventory management, request approvals, and physical inspection workflow.',
+                  'Approve borrow requests, inspect return photo proof, and update stock counts.',
             ),
           ),
           SizedBox(
@@ -362,7 +361,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.admin_panel_settings_outlined,
               title: 'ICT Coordinators / Admins',
               body:
-                  'Account management, permission controls, and system log auditing.',
+                  'Manage user accounts, set role permissions, and view activity logs.',
             ),
           ),
         ],

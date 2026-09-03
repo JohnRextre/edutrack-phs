@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -21,16 +23,31 @@ class _LoginScreenState extends State<LoginScreen> {
   AccountRole _selectedRole = AccountRole.student;
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _hasSubmitted = false;
+  String? _loginError;
+  String? _errorField;
+  Timer? _loginErrorTimer;
 
   @override
   void dispose() {
+    _loginErrorTimer?.cancel();
     _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
+    setState(() => _hasSubmitted = true);
+    if (_identifierController.text.trim().isEmpty) {
+      _formKey.currentState!.validate();
+      _scheduleValidationClear();
+      return;
+    }
+    if (_passwordController.text.isEmpty) {
+      _formKey.currentState!.validate();
+      _scheduleValidationClear();
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -51,13 +68,57 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
-      _showSnackBar(AuthService.friendlyErrorMessage(error));
+      _setLoginError(error);
     } catch (error) {
       if (!mounted) return;
-      _showSnackBar(AuthService.friendlyErrorMessage(error));
+      _setLoginError(error);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _setLoginError(Object error) {
+    final code = error is FirebaseAuthException ? error.code : null;
+    _loginErrorTimer?.cancel();
+    setState(() {
+      _loginError = AuthService.friendlyErrorMessage(error);
+      _errorField = switch (code) {
+        'wrong-password' || 'invalid-credential' => 'password',
+        'user-not-found' ||
+        'role-mismatch' ||
+        'account-not-approved' => 'identifier',
+        _ => null,
+      };
+    });
+    _loginErrorTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() {
+        _loginError = null;
+        _errorField = null;
+        _hasSubmitted = false;
+      });
+      _formKey.currentState?.validate();
+    });
+  }
+
+  void _clearLoginError() {
+    _loginErrorTimer?.cancel();
+    if (_loginError == null && _errorField == null && !_hasSubmitted) return;
+    setState(() {
+      _loginError = null;
+      _errorField = null;
+      _hasSubmitted = false;
+    });
+    _formKey.currentState?.validate();
+  }
+
+  void _scheduleValidationClear() {
+    _loginErrorTimer?.cancel();
+    _loginErrorTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() => _hasSubmitted = false);
+      _formKey.currentState?.validate();
+    });
   }
 
   Future<void> _openRegistrationFlow() async {
@@ -136,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 28),
                     _FieldLabel('Select Account Type:'),
                     DropdownButtonFormField<AccountRole>(
-                      value: _selectedRole,
+                      initialValue: _selectedRole,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.person_outline),
                       ),
@@ -160,12 +221,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: _identifierController,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
+                      onChanged: (_) => _clearLoginError(),
+                      decoration: InputDecoration(
                         labelText: 'School ID / Email',
                         prefixIcon: Icon(Icons.badge_outlined),
+                        enabledBorder: _fieldBorder(
+                          _hasSubmitted && _errorField == 'identifier',
+                        ),
+                        focusedBorder: _fieldBorder(
+                          _hasSubmitted && _errorField == 'identifier',
+                        ),
+                        errorBorder: _fieldBorder(true),
+                        focusedErrorBorder: _fieldBorder(true),
                       ),
                       validator: (value) =>
-                          value == null || value.trim().isEmpty
+                          _hasSubmitted &&
+                              (value == null || value.trim().isEmpty)
                           ? 'Enter your School ID or Email'
                           : null,
                     ),
@@ -173,6 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
+                      onChanged: (_) => _clearLoginError(),
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outline),
@@ -186,8 +258,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 : Icons.visibility_off_outlined,
                           ),
                         ),
+                        enabledBorder: _fieldBorder(
+                          _hasSubmitted && _errorField == 'password',
+                        ),
+                        focusedBorder: _fieldBorder(
+                          _hasSubmitted && _errorField == 'password',
+                        ),
+                        errorBorder: _fieldBorder(true),
+                        focusedErrorBorder: _fieldBorder(true),
                       ),
-                      validator: (value) => value == null || value.isEmpty
+                      validator: (value) =>
+                          _hasSubmitted && (value == null || value.isEmpty)
                           ? 'Enter your password'
                           : null,
                     ),
@@ -209,6 +290,36 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     const SizedBox(height: 18),
+                    if (_loginError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          border: Border.all(color: Colors.red.shade400),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _loginError!,
+                                style: TextStyle(color: Colors.red.shade900),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     SizedBox(
                       height: 50,
                       child: FilledButton(
@@ -253,6 +364,14 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+
+  OutlineInputBorder _fieldBorder(bool invalid) => OutlineInputBorder(
+    borderSide: BorderSide(
+      color: invalid ? Colors.red.shade400 : Colors.grey.shade500,
+      width: invalid ? 1.5 : 1,
+    ),
+    borderRadius: BorderRadius.circular(4),
+  );
 }
 
 class _FieldLabel extends StatelessWidget {
