@@ -12,6 +12,7 @@ import 'screens/custodian_return_verification_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/homepage_screen.dart';
+import 'screens/email_verification_screen.dart';
 import 'screens/initial_admin_setup_screen.dart';
 import 'screens/my_borrowings_screen.dart';
 import 'screens/profile_screen.dart';
@@ -45,6 +46,11 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomepageScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
+        '/verify-email': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final role = _roleFromArguments(args);
+          return EmailVerificationScreen(role: role);
+        },
         '/initial-admin-setup': (context) => const InitialAdminSetupScreen(),
         '/dashboard': (context) {
           return DashboardScreen(

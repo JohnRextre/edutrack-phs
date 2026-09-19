@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
 import '../services/auth_service.dart';
-import 'dashboard_screen.dart';
+import 'email_verification_screen.dart';
 
 class InitialAdminSetupScreen extends StatefulWidget {
   const InitialAdminSetupScreen({super.key});
@@ -69,7 +69,7 @@ class _InitialAdminSetupScreenState extends State<InitialAdminSetupScreen> {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) =>
-              const DashboardScreen(role: AccountRole.ictCoordinator),
+              const EmailVerificationScreen(role: AccountRole.ictCoordinator),
         ),
         (route) => false,
       );

@@ -38,7 +38,84 @@ class AuthService {
 
   static bool get isFirebaseAvailable => Firebase.apps.isNotEmpty;
 
+  static User? get currentUser => _auth.currentUser;
+
   static Future<void> signOut() => _auth.signOut();
+
+  Future<void> sendEmailVerification() async {
+    final user = _auth.currentUser;
+    if (user != null && !user.emailVerified) {
+      await user.sendEmailVerification();
+    }
+  }
+
+  Future<bool> checkEmailVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    await user.reload();
+    final refreshedUser = _auth.currentUser;
+    final isVerified = refreshedUser?.emailVerified ?? false;
+    if (isVerified) {
+      await markEmailVerifiedInFirestore(user.uid);
+    }
+    return isVerified;
+  }
+
+  Future<void> markEmailVerifiedInFirestore(String uid) async {
+    try {
+      await _firestore.collection(usersCollection).doc(uid).set({
+        'emailVerified': true,
+        'status': 'Active',
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  Future<void> cancelUnverifiedRegistration() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+    try {
+      await _firestore.collection(usersCollection).doc(uid).delete();
+    } catch (e) {
+      debugPrint('Error deleting unverified user document from Firestore: $e');
+    }
+    try {
+      await user.delete();
+    } catch (e) {
+      debugPrint('Error deleting unverified auth user: $e');
+    }
+    await _auth.signOut();
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty || !trimmed.contains('@')) {
+      throw FirebaseAuthException(
+        code: 'invalid-email',
+        message: 'Please enter a valid email address.',
+      );
+    }
+    await _auth.sendPasswordResetEmail(email: trimmed);
+  }
+
+  /// Verifies the [oobCode] from the reset email and returns the associated
+  /// email address. Throws [FirebaseAuthException] if the code is invalid or
+  /// expired.
+  Future<String> verifyResetCode(String oobCode) async {
+    return _auth.verifyPasswordResetCode(oobCode.trim());
+  }
+
+  /// Completes the password reset using [oobCode] (from the reset email link)
+  /// and the user's chosen [newPassword].
+  Future<void> completePasswordReset({
+    required String oobCode,
+    required String newPassword,
+  }) async {
+    await _auth.confirmPasswordReset(
+      code: oobCode.trim(),
+      newPassword: newPassword,
+    );
+  }
 
   static String roleFromString(String? roleName) {
     final normalized = (roleName ?? '').trim();
@@ -132,7 +209,17 @@ class AuthService {
         .limit(1)
         .get();
 
-    return snapshot.docs.isNotEmpty;
+    if (snapshot.docs.isEmpty) return false;
+
+    final data = snapshot.docs.first.data();
+    final status = data['status']?.toString().toLowerCase();
+    if (data['emailVerified'] == false &&
+        (status == 'pending verification' ||
+            status == 'pending_verification')) {
+      return false;
+    }
+
+    return true;
   }
 
   Future<UserCredential> registerUser({
@@ -196,10 +283,12 @@ class AuthService {
         email: trimmedEmail,
         schoolId: trimmedSchoolId,
         role: AuthService.firestoreRoleLabel(role),
+        status: 'Pending Verification',
       );
 
       await _firestore.collection(usersCollection).doc(user.uid).set({
         ...profile.toMap(),
+        'emailVerified': false,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -207,6 +296,12 @@ class AuthService {
         await _firestore.doc(configDocumentPath).set({
           'isAdminSetupComplete': true,
         }, SetOptions(merge: true));
+      }
+
+      try {
+        await user.sendEmailVerification();
+      } catch (error) {
+        debugPrint('Initial email verification could not be sent: $error');
       }
 
       return credential;
@@ -278,7 +373,8 @@ class AuthService {
       );
     }
 
-    return user;
+    await user.reload();
+    return _auth.currentUser ?? user;
   }
 
   Future<AccountRole> fetchCurrentUserRole() async {
@@ -364,6 +460,10 @@ class AuthService {
           return 'A network problem prevented the request. Please try again.';
         case 'requires-recent-login':
           return 'Please re-enter the current password and try again.';
+        case 'too-many-requests':
+          return 'Too many requests. Please wait a moment before trying again.';
+        case 'email-not-verified':
+          return 'Please verify your email address before continuing.';
         default:
           return error.message ?? 'Something went wrong. Please try again.';
       }

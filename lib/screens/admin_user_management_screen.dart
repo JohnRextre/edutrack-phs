@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -80,6 +81,7 @@ class UserAccount {
     required this.department,
     this.statusReason,
     this.avatarColor,
+    this.photoUrl,
   });
 
   final String uid;
@@ -91,6 +93,7 @@ class UserAccount {
   final String department;
   final String? statusReason;
   final Color? avatarColor;
+  final String? photoUrl;
 
   /// Prefer school ID in list search; fall back to uid.
   String get displayId => schoolId.isNotEmpty ? schoolId : uid;
@@ -110,6 +113,8 @@ class UserAccount {
             .toString();
     final uid = (data['uid'] ?? doc.id).toString();
     final statusReason = data['statusReason']?.toString();
+    final photoUrl = (data['photoUrl'] ?? data['photoURL'] ?? data['avatarUrl'])
+        ?.toString();
 
     return UserAccount(
       uid: uid,
@@ -121,6 +126,7 @@ class UserAccount {
       department: department.isEmpty ? '—' : department,
       statusReason: statusReason,
       avatarColor: _avatarColorFor(uid.isNotEmpty ? uid : fullName),
+      photoUrl: photoUrl,
     );
   }
 }
@@ -754,7 +760,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<UserRole>(
-                value: selectedRole,
+                initialValue: selectedRole,
                 decoration: const InputDecoration(
                   labelText: 'New Role',
                   border: OutlineInputBorder(),
@@ -1085,7 +1091,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   if (!isProtectedAdmin) ...[
                     const SizedBox(height: 16),
                     DropdownButtonFormField<AccountStatus>(
-                      value: selectedStatus,
+                      initialValue: selectedStatus,
                       decoration: const InputDecoration(
                         labelText: 'Account Status',
                         border: OutlineInputBorder(),
@@ -1462,14 +1468,7 @@ class _UserCard extends StatelessWidget {
               CircleAvatar(
                 backgroundColor:
                     user.avatarColor ?? colorScheme.primaryContainer,
-                child: Text(
-                  _initialsFor(user.fullName),
-                  style: TextStyle(
-                    color: colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
+                child: _buildAvatar(user, colorScheme),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1633,6 +1632,54 @@ class _UserCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(UserAccount user, ColorScheme colorScheme) {
+    if (user.photoUrl != null && user.photoUrl!.trim().isNotEmpty) {
+      final url = user.photoUrl!.trim();
+      if (url.startsWith('data:image')) {
+        try {
+          final commaIndex = url.indexOf(',');
+          final base64Part = commaIndex != -1
+              ? url.substring(commaIndex + 1)
+              : url;
+          final bytes = base64Decode(base64Part);
+          return ClipOval(
+            child: Image.memory(
+              bytes,
+              width: 40,
+              height: 40,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _initialsWidget(user, colorScheme),
+            ),
+          );
+        } catch (_) {
+          return _initialsWidget(user, colorScheme);
+        }
+      } else if (url.startsWith('http')) {
+        return ClipOval(
+          child: Image.network(
+            url,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _initialsWidget(user, colorScheme),
+          ),
+        );
+      }
+    }
+    return _initialsWidget(user, colorScheme);
+  }
+
+  Widget _initialsWidget(UserAccount user, ColorScheme colorScheme) {
+    return Text(
+      _initialsFor(user.fullName),
+      style: TextStyle(
+        color: colorScheme.onPrimaryContainer,
+        fontWeight: FontWeight.bold,
+        fontSize: 14,
       ),
     );
   }

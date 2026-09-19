@@ -3,10 +3,21 @@ import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
 import '../services/auth_service.dart';
-import 'dashboard_screen.dart';
+import 'email_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({
+    super.key,
+    this.initialFirstName,
+    this.initialLastName,
+    this.initialSchoolId,
+    this.initialRole,
+  });
+
+  final String? initialFirstName;
+  final String? initialLastName;
+  final String? initialSchoolId;
+  final AccountRole? initialRole;
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -14,17 +25,34 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _schoolIdController = TextEditingController();
+  late final TextEditingController _firstNameController;
+  late final TextEditingController _lastNameController;
+  late final TextEditingController _schoolIdController;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
   bool _obscurePassword = true;
+  bool _obscureConfirm = true;
   bool _isLoading = false;
-  AccountRole _selectedRole = AccountRole.student;
+  late AccountRole _selectedRole;
 
   final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    _firstNameController = TextEditingController(
+      text: widget.initialFirstName ?? '',
+    );
+    _lastNameController = TextEditingController(
+      text: widget.initialLastName ?? '',
+    );
+    _schoolIdController = TextEditingController(
+      text: widget.initialSchoolId ?? '',
+    );
+    _selectedRole = widget.initialRole ?? AccountRole.student;
+  }
 
   @override
   void dispose() {
@@ -37,10 +65,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
+  ({String label, double fraction, Color color}) _passwordStrength(
+    String password,
+    ColorScheme colors,
+  ) {
+    if (password.isEmpty) {
+      return (
+        label: 'Enter a password',
+        fraction: 0.0,
+        color: colors.onSurfaceVariant,
+      );
     }
+
+    int score = 0;
+    if (RegExp(r'[A-Z]').hasMatch(password)) score++;
+    if (RegExp(r'[a-z]').hasMatch(password)) score++;
+    if (RegExp(r'[0-9]').hasMatch(password)) score++;
+    if (RegExp(r'[!@#\$%^&*(),.?":{}|<>]').hasMatch(password)) score++;
+
+    if (password.length < 8 || score <= 2) {
+      return (label: 'Weak', fraction: 0.33, color: colors.error);
+    } else if (score == 3) {
+      return (
+        label: 'Medium',
+        fraction: 0.66,
+        color: Colors.amber[700] ?? Colors.orange,
+      );
+    } else {
+      return (
+        label: 'Strong',
+        fraction: 1.0,
+        color: Colors.green[700] ?? Colors.green,
+      );
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
       _showSnackBar('Passwords do not match.', isError: true);
@@ -63,14 +124,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final user = credential.user;
       if (user == null) {
-        _showSnackBar('Account creation failed. Please try again.', isError: true);
+        _showSnackBar(
+          'Account creation failed. Please try again.',
+          isError: true,
+        );
         return;
       }
 
-      final route = MaterialPageRoute(
-        builder: (_) => DashboardScreen(role: _selectedRole),
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => EmailVerificationScreen(
+            role: _selectedRole,
+            registeredFirstName: _firstNameController.text,
+            registeredLastName: _lastNameController.text,
+            registeredSchoolId: _schoolIdController.text,
+          ),
+        ),
       );
-      Navigator.of(context).pushReplacement(route);
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
       _showSnackBar(AuthService.friendlyErrorMessage(error), isError: true);
@@ -86,21 +156,58 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : null,
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
       ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required String label,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, size: 20),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: colors.surfaceContainerLowest,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colors.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colors.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colors.primary, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colors.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colors.error, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final strength = _passwordStrength(_passwordController.text, colors);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
+      backgroundColor: colors.surfaceContainerLow,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: Form(
@@ -108,38 +215,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Center(
-                      child: Image.asset(
-                        'lib/assets/edutrack_logo/EduTrack_Square_Logo.png',
-                        width: 96,
-                        height: 96,
-                        errorBuilder: (_, _, _) => CircleAvatar(
-                          radius: 40,
-                          backgroundColor: colors.primaryContainer,
-                          child: Icon(
-                            Icons.person_add_alt_1_outlined,
-                            color: colors.onPrimaryContainer,
-                          ),
+                    // ── Header ──────────────────────────────────────────
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => Navigator.of(context).pop(),
+                          tooltip: 'Back to Login',
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Join EduTrack PHS',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colors.primary,
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 26,
+                            backgroundColor: colors.primaryContainer,
+                            child: Icon(
+                              Icons.person_add_alt_1_rounded,
+                              color: colors.onPrimaryContainer,
+                              size: 26,
+                            ),
                           ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 28),
-                    DropdownButtonFormField<AccountRole>(
-                      value: _selectedRole,
-                      decoration: const InputDecoration(
-                        labelText: 'Account Type',
-                        prefixIcon: Icon(Icons.person_outline),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Create Account',
+                            style: Theme.of(context).textTheme.headlineMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colors.onSurface,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Fill in the details below to register.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Account Type ─────────────────────────────────────
+                    _SectionLabel(label: 'Account Type'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<AccountRole>(
+                      initialValue: _selectedRole,
+                      decoration: _fieldDecoration(
+                        label: 'I am a...',
+                        icon: Icons.manage_accounts_outlined,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                       items: const [
                         DropdownMenuItem(
                           value: AccountRole.student,
@@ -156,128 +286,255 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         }
                       },
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _firstNameController,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: 'First Name',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                      ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Enter your first name.'
-                          : null,
+                    const SizedBox(height: 20),
+
+                    // ── Personal Information ──────────────────────────────
+                    _SectionLabel(label: 'Personal Information'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _firstNameController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: _fieldDecoration(
+                              label: 'First Name',
+                              icon: Icons.badge_outlined,
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Required'
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _lastNameController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: _fieldDecoration(
+                              label: 'Last Name',
+                              icon: Icons.person_outline,
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Required'
+                                : null,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _lastNameController,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: 'Last Name',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Enter your last name.'
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _schoolIdController,
-                      decoration: InputDecoration(
-                        labelText: _selectedRole == AccountRole.teacher
+                      decoration: _fieldDecoration(
+                        label: _selectedRole == AccountRole.teacher
                             ? 'Employee ID'
-                            : 'School ID',
-                        prefixIcon: const Icon(Icons.numbers_outlined),
+                            : 'School ID / LRN',
+                        icon: Icons.numbers_outlined,
                       ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
+                      validator: (v) => v == null || v.trim().isEmpty
                           ? _selectedRole == AccountRole.teacher
                                 ? 'Enter your employee ID.'
                                 : 'Enter your school ID.'
                           : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
+
+                    // ── Login Credentials ─────────────────────────────────
+                    _SectionLabel(label: 'Login Credentials'),
+                    const SizedBox(height: 8),
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Email Address',
-                        prefixIcon: Icon(Icons.email_outlined),
+                      decoration: _fieldDecoration(
+                        label: 'Email Address',
+                        icon: Icons.email_outlined,
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
                           return 'Enter your email address.';
                         }
-                        if (!value.contains('@')) {
-                          return 'Enter a valid email address.';
-                        }
+                        if (!v.contains('@')) return 'Enter a valid email.';
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
+                      onChanged: (_) => setState(() {}),
+                      decoration: _fieldDecoration(
+                        label: 'Password',
+                        icon: Icons.lock_outline,
+                        suffix: IconButton(
                           icon: Icon(
                             _obscurePassword
                                 ? Icons.visibility_outlined
                                 : Icons.visibility_off_outlined,
+                            size: 20,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
                           ),
                         ),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Enter a password.';
-                        }
-                        if (value.length < 6) {
-                          return 'Password must be at least 6 characters.';
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'Enter a password.';
+                        if (v.length < 8) {
+                          return 'At least 8 characters required.';
                         }
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    // Password Strength Indicator
+                    if (_passwordController.text.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Password strength',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colors.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            strength.label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: strength.color,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: strength.fraction,
+                          minHeight: 4,
+                          backgroundColor: colors.surfaceContainerHighest,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            strength.color,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Use uppercase, lowercase, number, and symbol.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _confirmPasswordController,
-                      obscureText: _obscurePassword,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirm Password',
-                        prefixIcon: Icon(Icons.lock_reset_outlined),
+                      obscureText: _obscureConfirm,
+                      decoration: _fieldDecoration(
+                        label: 'Confirm Password',
+                        icon: Icons.lock_reset_outlined,
+                        suffix: IconButton(
+                          icon: Icon(
+                            _obscureConfirm
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            size: 20,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscureConfirm = !_obscureConfirm,
+                          ),
+                        ),
                       ),
-                      validator: (value) => value == null || value.isEmpty
-                          ? 'Re-enter your password.'
-                          : null,
+                      validator: (v) {
+                        if (v == null || v.isEmpty) {
+                          return 'Re-enter your password.';
+                        }
+                        if (v != _passwordController.text) {
+                          return 'Passwords do not match.';
+                        }
+                        return null;
+                      },
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 28),
+
+                    // ── Submit ────────────────────────────────────────────
                     FilledButton(
                       onPressed: _isLoading ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                       child: _isLoading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: colors.onPrimary,
+                              ),
                             )
-                          : const Text('Create Account'),
+                          : const Text(
+                              'Create Account',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 14),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Back to Login'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Already have an account? ',
+                          style: TextStyle(color: colors.onSurfaceVariant),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Text(
+                            'Log in',
+                            style: TextStyle(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Text(
+      label.toUpperCase(),
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.1,
+        color: colors.primary,
       ),
     );
   }

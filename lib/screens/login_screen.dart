@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
 import '../services/auth_service.dart';
+import 'email_verification_screen.dart';
+import 'forgot_password_screen.dart';
 import 'initial_admin_setup_screen.dart';
 import 'register_screen.dart';
 
@@ -27,6 +29,31 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _loginError;
   String? _errorField;
   Timer? _loginErrorTimer;
+  bool _didCheckArguments = false;
+  String? _pendingVerificationEmail;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didCheckArguments) {
+      _didCheckArguments = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic>) {
+        final email = args['email'] as String?;
+        final role = args['role'] as AccountRole?;
+        if (email != null && email.isNotEmpty) {
+          _identifierController.text = email;
+          _pendingVerificationEmail = email;
+        }
+        if (role != null) {
+          _selectedRole = role;
+        }
+      } else if (args is String && args.contains('@')) {
+        _identifierController.text = args;
+        _pendingVerificationEmail = args;
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -59,6 +86,16 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (!mounted) return;
+      if (!user.emailVerified) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationScreen(role: _selectedRole),
+          ),
+        );
+        return;
+      }
+
       if (user.uid.isNotEmpty) {
         Navigator.pushReplacementNamed(
           context,
@@ -194,7 +231,43 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 28),
+                    if (_pendingVerificationEmail != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.mark_email_unread_rounded,
+                              color: colors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Email verification pending. Enter your password to continue verifying $_pendingVerificationEmail.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: colors.onSurface,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
                     _FieldLabel('Select Account Type:'),
                     DropdownButtonFormField<AccountRole>(
                       initialValue: _selectedRole,
@@ -344,15 +417,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: const Text('Create an account'),
                         ),
                         TextButton(
-                          onPressed: () {},
+                          onPressed: _openForgotPassword,
                           child: const Text('Forgot password'),
                         ),
                       ],
                     ),
                     Center(
-                      child: TextButton(
-                        onPressed: () {},
-                        child: const Text('Need help?'),
+                      child: TextButton.icon(
+                        onPressed: _showNeedHelpSheet,
+                        icon: const Icon(Icons.help_outline_rounded, size: 16),
+                        label: const Text('Need help?'),
                       ),
                     ),
                   ],
@@ -362,6 +436,208 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _openForgotPassword() {
+    final prefill = _identifierController.text.contains('@')
+        ? _identifierController.text.trim()
+        : '';
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(initialEmail: prefill),
+      ),
+    );
+  }
+
+  void _showNeedHelpSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        final textTheme = Theme.of(sheetContext).textTheme;
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) => Container(
+            decoration: BoxDecoration(
+              color: Theme.of(sheetContext).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Drag handle
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.help_outline_rounded,
+                          color: colors.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Need Help?',
+                              style: textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'EduTrack PHS Assistance & FAQs',
+                              style: TextStyle(
+                                color: colors.onSurfaceVariant,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(sheetContext),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+
+                // Content List
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      const _HelpAccordion(
+                        icon: Icons.login_rounded,
+                        title: 'How do I log in to my account?',
+                        content:
+                            '1. Select your correct account type (Student, Teacher, Property Custodian, or ICT Coordinator).\n\n'
+                            '2. Sign in using either your assigned School ID (LRN / Employee ID) or your registered Email Address along with your password.',
+                      ),
+                      const SizedBox(height: 12),
+                      const _HelpAccordion(
+                        icon: Icons.mark_email_unread_outlined,
+                        title: "I haven't received my verification email",
+                        content:
+                            '1. Check your Spam, Junk, or Promotions folder in your email inbox.\n\n'
+                            '2. If you mistyped your email during registration, click "Mistyped email? Cancel & Re-register" to fix it using the same School ID.\n\n'
+                            '3. For legacy accounts, you can verify your email anytime through your Profile screen ("Verify My Account").',
+                      ),
+                      const SizedBox(height: 12),
+                      _HelpAccordion(
+                        icon: Icons.lock_reset_rounded,
+                        title: 'Forgot or lost your password?',
+                        content:
+                            'Tap the button below or "Forgot password" on the login screen. Enter your registered email address to receive a secure password reset link.',
+                        actionLabel: 'Reset Password Now',
+                        onAction: () {
+                          Navigator.pop(sheetContext);
+                          _openForgotPassword();
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Contact School Support Card
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.support_agent_rounded,
+                                  color: colors.primary,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'School IT Support Office',
+                                  style: textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            _SupportContactRow(
+                              icon: Icons.location_on_outlined,
+                              text: 'ICT Coordinator Office / Room 205',
+                              colors: colors,
+                            ),
+                            const SizedBox(height: 6),
+                            _SupportContactRow(
+                              icon: Icons.email_outlined,
+                              text: 'mendozajohnrexter@gmail.com',
+                              colors: colors,
+                            ),
+                            const SizedBox(height: 6),
+                            _SupportContactRow(
+                              icon: Icons.access_time_rounded,
+                              text: 'Mon - Fri | 7:30 AM - 5:00 PM',
+                              colors: colors,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -389,4 +665,121 @@ class _FieldLabel extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _HelpAccordion extends StatelessWidget {
+  const _HelpAccordion({
+    required this.icon,
+    required this.title,
+    required this.content,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String content;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final tileColor = colors.surfaceContainerHighest.withValues(alpha: 0.35);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              backgroundColor: tileColor,
+              collapsedBackgroundColor: tileColor,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: colors.primary, size: 18),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              children: [
+                Text(
+                  content,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colors.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: onAction,
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                      label: Text(actionLabel!),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SupportContactRow extends StatelessWidget {
+  const _SupportContactRow({
+    required this.icon,
+    required this.text,
+    required this.colors,
+  });
+
+  final IconData icon;
+  final String text;
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: colors.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 12.5, color: colors.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
 }

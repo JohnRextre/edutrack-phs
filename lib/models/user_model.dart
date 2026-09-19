@@ -14,6 +14,7 @@ class UserModel {
     this.departmentOrSection = '',
     this.status = 'Active',
     this.createdAt,
+    this.photoUrl,
   });
 
   final String uid;
@@ -25,6 +26,7 @@ class UserModel {
   final String departmentOrSection;
   final String status;
   final DateTime? createdAt;
+  final String? photoUrl;
 
   /// Backward-compatible display name for screens still expecting `fullName`.
   String get fullName => '$firstName $lastName'.trim();
@@ -57,6 +59,7 @@ class UserModel {
       'role': role,
       'departmentOrSection': departmentOrSection,
       'status': status,
+      if (photoUrl != null) 'photoUrl': photoUrl,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
     };
   }
@@ -64,7 +67,9 @@ class UserModel {
   factory UserModel.fromMap(Map<String, dynamic> map, {String? id}) {
     final firstName = (map['firstName'] ?? '').toString().trim();
     final lastName = (map['lastName'] ?? '').toString().trim();
-    final legacyFullName = (map['fullName'] ?? map['name'] ?? '').toString().trim();
+    final legacyFullName = (map['fullName'] ?? map['name'] ?? '')
+        .toString()
+        .trim();
 
     final resolvedFirstName = firstName.isNotEmpty
         ? firstName
@@ -89,12 +94,14 @@ class UserModel {
       departmentOrSection: (map['departmentOrSection'] ?? '').toString(),
       status: (map['status'] ?? 'Active').toString(),
       createdAt: createdAt,
+      photoUrl:
+          map['photoUrl']?.toString() ??
+          map['photoURL']?.toString() ??
+          map['avatarUrl']?.toString(),
     );
   }
 
-  factory UserModel.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
+  factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     return UserModel.fromMap(doc.data() ?? {}, id: doc.id);
   }
 
@@ -108,6 +115,7 @@ class UserModel {
     String? departmentOrSection,
     String? status,
     DateTime? createdAt,
+    String? photoUrl,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -119,6 +127,7 @@ class UserModel {
       departmentOrSection: departmentOrSection ?? this.departmentOrSection,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 
