@@ -4,6 +4,7 @@ import '../../models/borrow_transaction_model.dart';
 import '../../services/borrow_service.dart';
 import '../../services/dashboard_service.dart';
 import '../../widgets/borrow_status_badge.dart';
+import '../../widgets/proof_image_attachment_field.dart';
 import '../../widgets/return_verification_details.dart';
 
 /// Full-screen return verification review for custodians.
@@ -189,34 +190,11 @@ class _ReturnVerificationDetailsScreenState
             const SizedBox(height: 20),
             _SectionTitle(title: 'Proof of Return'),
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(12),
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.4,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 40,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Proof of Return (Attach Image Placeholder)',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+            ProofImageDisplayCard(
+              imageUrl: transaction.returnProofImage,
+              title: 'Proof of Return Preview',
+              emptyMessage:
+                  'No proof photo was attached by the borrower for this return.',
             ),
           ],
         ),

@@ -18,6 +18,7 @@ class CustodianSidebar extends StatelessWidget {
       ('Borrowed Inventory', Icons.inventory_outlined),
       ('Return Verification', Icons.assignment_turned_in_outlined),
       ('Reports', Icons.bar_chart_outlined),
+      ('My Account', Icons.person_outline),
     ];
     return _SidebarFrame(
       title: 'Custodian Portal',

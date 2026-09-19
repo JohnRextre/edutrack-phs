@@ -291,6 +291,7 @@ class BorrowService {
     required String returnType,
     required String itemConditionNotes,
     String? overdueReason,
+    String? returnProofImage,
   }) async {
     final trimmedTxnId = transactionId.trim();
     if (trimmedTxnId.isEmpty) {
@@ -344,6 +345,7 @@ class BorrowService {
     final isOverdue =
         expectedReturn != null && DateTime.now().isAfter(expectedReturn);
     final trimmedOverdueReason = overdueReason?.trim();
+    final trimmedProofImage = returnProofImage?.trim();
 
     if (isOverdue &&
         (trimmedOverdueReason == null || trimmedOverdueReason.isEmpty)) {
@@ -364,11 +366,19 @@ class BorrowService {
         'overdueReason': trimmedOverdueReason
       else
         'overdueReason': FieldValue.delete(),
+      if (trimmedProofImage != null && trimmedProofImage.isNotEmpty)
+        'returnProofImage': trimmedProofImage
+      else
+        'returnProofImage': FieldValue.delete(),
     });
   }
 
   /// Student/teacher initiates a return — moves item to custodian verification queue.
-  Future<void> submitReturnRequest(String transactionId) async {
+  Future<void> submitReturnRequest(
+    String transactionId, {
+    String? itemConditionNotes,
+    String? returnProofImage,
+  }) async {
     final trimmedTxnId = transactionId.trim();
     if (trimmedTxnId.isEmpty) {
       throw FirebaseException(
@@ -398,11 +408,18 @@ class BorrowService {
       );
     }
 
+    final trimmedProofImage = returnProofImage?.trim();
+    final trimmedCondition = itemConditionNotes?.trim();
+
     await txnRef.update({
       'status': BorrowTransactionStatus.returnPending,
       'returnSubmittedDate': FieldValue.serverTimestamp(),
       'rejectionReason': FieldValue.delete(),
       'requiredReturnType': FieldValue.delete(),
+      if (trimmedCondition != null && trimmedCondition.isNotEmpty)
+        'itemConditionNotes': trimmedCondition,
+      if (trimmedProofImage != null && trimmedProofImage.isNotEmpty)
+        'returnProofImage': trimmedProofImage,
     });
   }
 
@@ -415,6 +432,7 @@ class BorrowService {
     required String transactionId,
     required String appealType,
     required String appealNotes,
+    String? returnProofImage,
   }) async {
     final trimmedTxnId = transactionId.trim();
     if (trimmedTxnId.isEmpty) {
@@ -465,11 +483,17 @@ class BorrowService {
       );
     }
 
+    final trimmedProofImage = returnProofImage?.trim();
+
     await txnRef.update({
       'status': BorrowTransactionStatus.returnPending,
       'returnType': trimmedAppealType,
       'itemConditionNotes': trimmedNotes,
       'returnSubmittedDate': FieldValue.serverTimestamp(),
+      if (trimmedProofImage != null && trimmedProofImage.isNotEmpty)
+        'returnProofImage': trimmedProofImage
+      else
+        'returnProofImage': FieldValue.delete(),
     });
   }
 

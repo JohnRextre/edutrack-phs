@@ -67,6 +67,7 @@ class DashboardScreen extends StatelessWidget {
               : '/custodian-reports',
         'User Management' => '/admin-users',
         'System Logs' => '/admin-logs',
+        'My Account' => '/profile',
         _ => null,
       };
       if (route != null) Navigator.pushNamed(context, route);
@@ -147,6 +148,7 @@ class _ManagementShell extends StatelessWidget {
               : '/custodian-reports',
         'User Management' => '/admin-users',
         'System Logs' => '/admin-logs',
+        'My Account' => '/profile',
         _ => null,
       };
       if (route != null) Navigator.pushNamed(context, route);

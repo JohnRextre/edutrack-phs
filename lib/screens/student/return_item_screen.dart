@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/borrow_transaction_model.dart';
 import '../../services/borrow_service.dart';
 import '../../widgets/borrow_status_badge.dart';
+import '../../widgets/proof_image_attachment_field.dart';
 
 /// Full-screen form for submitting a return request with proof type and details.
 class ReturnItemScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
   final _overdueReasonController = TextEditingController();
   final _itemConditionController = TextEditingController();
   final _borrowService = BorrowService();
+  String? _proofImageUrl;
   bool _isSubmitting = false;
 
   BorrowTransaction get transaction => widget.transaction;
@@ -47,6 +49,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
         returnType: widget.returnType,
         itemConditionNotes: _itemConditionController.text.trim(),
         overdueReason: _isOverdue ? _overdueReasonController.text.trim() : null,
+        returnProofImage: _proofImageUrl,
       );
 
       if (!mounted) return;
@@ -149,36 +152,14 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 28,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: colorScheme.outlineVariant),
-                        borderRadius: BorderRadius.circular(12),
-                        color: colorScheme.surfaceContainerHighest.withValues(
-                          alpha: 0.4,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 40,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Attach Proof Image (Coming Soon)',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
+                    ProofImageAttachmentField(
+                      imageUrl: _proofImageUrl,
+                      title: 'Attach Return Proof Image',
+                      subtitle:
+                          'Take a photo of the item, receipt, or select from gallery',
+                      onImageChanged: (url) {
+                        setState(() => _proofImageUrl = url);
+                      },
                     ),
                     const SizedBox(height: 24),
                     Text(

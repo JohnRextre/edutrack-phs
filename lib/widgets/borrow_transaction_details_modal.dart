@@ -7,6 +7,8 @@ import '../models/resource_item.dart';
 import '../services/borrow_service.dart';
 import '../services/resource_service.dart';
 import 'borrow_status_badge.dart';
+import 'proof_image_attachment_field.dart';
+import 'return_verification_details.dart';
 
 /// Styled bottom sheet showing full details for a borrow transaction.
 class BorrowTransactionDetailsModal extends StatelessWidget {
@@ -151,6 +153,71 @@ class BorrowTransactionDetailsModal extends StatelessWidget {
                   ),
                 ],
               ),
+              if (transaction.returnType != null ||
+                  transaction.itemConditionNotes != null ||
+                  (transaction.returnProofImage != null &&
+                      transaction.returnProofImage!.isNotEmpty)) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Return Information & Proof',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _DetailCard(
+                  children: [
+                    if (transaction.returnType != null &&
+                        transaction.returnType!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Return Type',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const Spacer(),
+                            ReturnTypeBadge(
+                              returnType: transaction.returnType,
+                              compact: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (transaction.itemConditionNotes != null &&
+                        transaction.itemConditionNotes!.trim().isNotEmpty)
+                      _DetailRow(
+                        label: 'Condition Notes',
+                        value: transaction.itemConditionNotes!.trim(),
+                        multiline: true,
+                        isLast:
+                            transaction.returnProofImage == null ||
+                            transaction.returnProofImage!.isEmpty,
+                      ),
+                    if (transaction.returnProofImage != null &&
+                        transaction.returnProofImage!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Attached Proof Image',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ProofImageDisplayCard(
+                        imageUrl: transaction.returnProofImage,
+                        title: 'Return Proof Image Preview',
+                      ),
+                    ],
+                  ],
+                ),
+              ],
               if ((transaction.isBorrowRejected ||
                       transaction.isReturnRejected) &&
                   (transaction.isExpiredBorrowRejection ||

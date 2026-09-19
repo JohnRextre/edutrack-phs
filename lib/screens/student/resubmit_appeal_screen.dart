@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/borrow_transaction_model.dart';
 import '../../services/borrow_service.dart';
+import '../../widgets/proof_image_attachment_field.dart';
 
 class ResubmitAppealScreen extends StatefulWidget {
   const ResubmitAppealScreen({
@@ -21,6 +22,7 @@ class _ResubmitAppealScreenState extends State<ResubmitAppealScreen> {
   final _formKey = GlobalKey<FormState>();
   final _detailsController = TextEditingController();
   final _borrowService = BorrowService();
+  String? _proofImageUrl;
   bool _isSubmitting = false;
 
   BorrowTransaction get transaction => widget.transaction;
@@ -53,6 +55,7 @@ class _ResubmitAppealScreenState extends State<ResubmitAppealScreen> {
         transactionId: transaction.id,
         appealType: widget.appealType,
         appealNotes: _detailsController.text.trim(),
+        returnProofImage: _proofImageUrl,
       );
 
       if (!mounted) return;
@@ -184,36 +187,14 @@ class _ResubmitAppealScreenState extends State<ResubmitAppealScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 28,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: colorScheme.outlineVariant),
-                        borderRadius: BorderRadius.circular(12),
-                        color: colorScheme.surfaceContainerHighest.withValues(
-                          alpha: 0.4,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 40,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Attach Proof Image (Coming Soon)',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
+                    ProofImageAttachmentField(
+                      imageUrl: _proofImageUrl,
+                      title: 'Attach Remedy Proof Image',
+                      subtitle:
+                          'Take a photo of the receipt, repaired item, or replacement unit',
+                      onImageChanged: (url) {
+                        setState(() => _proofImageUrl = url);
+                      },
                     ),
                   ],
                 ),

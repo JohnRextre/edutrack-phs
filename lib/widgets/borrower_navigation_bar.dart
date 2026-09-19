@@ -23,12 +23,9 @@ class BorrowerNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 760;
     return NavigationBar(
       selectedIndex: selectedIndex,
-      labelBehavior: compact
-          ? NavigationDestinationLabelBehavior.alwaysHide
-          : NavigationDestinationLabelBehavior.alwaysShow,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       onDestinationSelected: (index) => _navigate(context, index),
       destinations: const [
         NavigationDestination(

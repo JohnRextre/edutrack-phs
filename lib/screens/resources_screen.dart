@@ -45,6 +45,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     super.dispose();
   }
 
+  bool get _hasActiveFilters =>
+      _selectedAvailability != 'All' ||
+      _selectedSortOption != 'Name (A-Z)' ||
+      _selectedMainCategory != 'All';
+
   // Filter and sort resources
   List<ResourceItem> _getFilteredResources(List<ResourceItem> allResources) {
     List<ResourceItem> filtered = allResources.where((item) {
@@ -52,24 +57,31 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
       final matchesSearch =
           query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
-          item.code.toLowerCase().contains(query);
+          item.code.toLowerCase().contains(query) ||
+          item.description.toLowerCase().contains(query);
 
-      // Tier 1 filter
+      // Category filter
       final matchesMainCategory =
           _selectedMainCategory == 'All' ||
           item.mainCategory == _selectedMainCategory;
 
       final matchesSubCategory =
+          _selectedMainCategory == 'All' ||
           _selectedSubCategory == 'All' ||
           item.subCategory == _selectedSubCategory;
+
       final matchesItemType =
-          _selectedItemType == 'All' || item.itemType == _selectedItemType;
+          _selectedMainCategory == 'All' ||
+          _selectedSubCategory == 'All' ||
+          _selectedItemType == 'All' ||
+          item.itemType == _selectedItemType;
 
       // Availability filter
-      final matchesAvailability =
-          _selectedAvailability == 'All' ||
-          (_selectedAvailability == 'Available Only' && item.isAvailable) ||
-          (_selectedAvailability == 'On Loan / Borrowed' && !item.isAvailable);
+      final matchesAvailability = switch (_selectedAvailability) {
+        'Available Only' => item.isAvailable,
+        'Out of Stock' => !item.isAvailable,
+        _ => true,
+      };
 
       return matchesSearch &&
           matchesMainCategory &&
@@ -81,12 +93,19 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     // Sort resources
     switch (_selectedSortOption) {
       case 'Name (A-Z)':
-        filtered.sort((a, b) => a.name.compareTo(b.name));
+        filtered.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
         break;
-      case 'Most Popular / Borrowed':
-      case 'Most Borrowed':
-        // For demo purposes, we'll just keep the original order
-        // In a real app, this would sort by borrow count
+      case 'Name (Z-A)':
+        filtered.sort(
+          (a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()),
+        );
+        break;
+      case 'Highest Available Stock':
+        filtered.sort(
+          (a, b) => b.availableQuantity.compareTo(a.availableQuantity),
+        );
         break;
       case 'Recently Added':
         filtered.sort((a, b) {
@@ -103,6 +122,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
   void _openFilterModal() {
     var availability = _selectedAvailability;
     var sort = _selectedSortOption;
+    var mainCategory = _selectedMainCategory;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -128,8 +149,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Filter Resources',
-                          style: Theme.of(context).textTheme.headlineSmall
+                          'Filter & Sort Resources',
+                          style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -137,6 +158,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                         onPressed: () => setModalState(() {
                           availability = 'All';
                           sort = 'Name (A-Z)';
+                          mainCategory = 'All';
                         }),
                         child: const Text('Reset All'),
                       ),
@@ -147,15 +169,20 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const Divider(height: 16),
+                  const SizedBox(height: 8),
                   Text(
                     'Availability',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    children: ['All', 'Available Only'].map((option) {
+                    children: ['All', 'Available Only', 'Out of Stock'].map((
+                      option,
+                    ) {
                       return ChoiceChip(
                         label: Text(option),
                         selected: availability == option,
@@ -167,15 +194,19 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'Sort By',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     children:
                         [
                               'Name (A-Z)',
-                              'Most Popular / Borrowed',
+                              'Name (Z-A)',
+                              'Highest Available Stock',
                               'Recently Added',
                             ]
                             .map(
@@ -188,12 +219,43 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                             )
                             .toList(),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Resource Category',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children:
+                        [
+                          ('All', 'All Items'),
+                          (generalLearningResources, 'General Learning'),
+                          (ictResources, 'ICT'),
+                          (tvlResources, 'TVL'),
+                        ].map((cat) {
+                          return ChoiceChip(
+                            label: Text(cat.$2),
+                            selected: mainCategory == cat.$1,
+                            onSelected: (_) =>
+                                setModalState(() => mainCategory = cat.$1),
+                          );
+                        }).toList(),
+                  ),
+                  const SizedBox(height: 24),
                   FilledButton(
                     onPressed: () {
                       setState(() {
                         _selectedAvailability = availability;
                         _selectedSortOption = sort;
+                        if (_selectedMainCategory != mainCategory) {
+                          _selectedMainCategory = mainCategory;
+                          _selectedSubCategory = 'All';
+                          _selectedItemType = 'All';
+                        }
                       });
                       Navigator.pop(context);
                     },
@@ -328,13 +390,96 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                 },
                                 icon: const Icon(Icons.close),
                               ),
-                            IconButton(
-                              tooltip: 'Filter resources',
-                              onPressed: _openFilterModal,
-                              icon: const Icon(Icons.tune),
+                            Badge(
+                              isLabelVisible: _hasActiveFilters,
+                              smallSize: 8,
+                              child: IconButton(
+                                tooltip: 'Filter resources',
+                                onPressed: _openFilterModal,
+                                icon: const Icon(Icons.tune),
+                              ),
                             ),
                           ],
                         ),
+                        if (_hasActiveFilters) ...[
+                          const SizedBox(height: 12),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                if (_selectedAvailability != 'All')
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Chip(
+                                      avatar: const Icon(
+                                        Icons.inventory_outlined,
+                                        size: 16,
+                                      ),
+                                      label: Text(_selectedAvailability),
+                                      deleteIcon: const Icon(
+                                        Icons.close,
+                                        size: 16,
+                                      ),
+                                      onDeleted: () => setState(
+                                        () => _selectedAvailability = 'All',
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                if (_selectedSortOption != 'Name (A-Z)')
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Chip(
+                                      avatar: const Icon(Icons.sort, size: 16),
+                                      label: Text(_selectedSortOption),
+                                      deleteIcon: const Icon(
+                                        Icons.close,
+                                        size: 16,
+                                      ),
+                                      onDeleted: () => setState(
+                                        () =>
+                                            _selectedSortOption = 'Name (A-Z)',
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                if (_selectedMainCategory != 'All')
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Chip(
+                                      avatar: const Icon(
+                                        Icons.category_outlined,
+                                        size: 16,
+                                      ),
+                                      label: Text(_selectedMainCategory),
+                                      deleteIcon: const Icon(
+                                        Icons.close,
+                                        size: 16,
+                                      ),
+                                      onDeleted: () => setState(() {
+                                        _selectedMainCategory = 'All';
+                                        _selectedSubCategory = 'All';
+                                        _selectedItemType = 'All';
+                                      }),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                ActionChip(
+                                  avatar: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('Clear Filters'),
+                                  onPressed: () => setState(() {
+                                    _selectedAvailability = 'All';
+                                    _selectedSortOption = 'Name (A-Z)';
+                                    _selectedMainCategory = 'All';
+                                    _selectedSubCategory = 'All';
+                                    _selectedItemType = 'All';
+                                  }),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         Text(
                           'Resource Category',
@@ -382,45 +527,49 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                 }).toList(),
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'Sub-Category',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 10),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children:
-                                {
-                                      'All',
-                                      ...ResourceTaxonomy.filterSubCategories(
-                                        _selectedMainCategory,
-                                      ),
-                                    }
-                                    .map(
-                                      (subCategory) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: FilterChip(
-                                          label: Text(subCategory),
-                                          selected:
-                                              _selectedSubCategory ==
-                                              subCategory,
-                                          onSelected: (_) => setState(() {
-                                            _selectedSubCategory = subCategory;
-                                            _selectedItemType = 'All';
-                                          }),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
+                        if (_selectedMainCategory != 'All') ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            'Sub-Category',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_selectedSubCategory != 'All') ...[
+                          const SizedBox(height: 10),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children:
+                                  {
+                                        'All',
+                                        ...ResourceTaxonomy.filterSubCategories(
+                                          _selectedMainCategory,
+                                        ),
+                                      }
+                                      .map(
+                                        (subCategory) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          child: FilterChip(
+                                            label: Text(subCategory),
+                                            selected:
+                                                _selectedSubCategory ==
+                                                subCategory,
+                                            onSelected: (_) => setState(() {
+                                              _selectedSubCategory =
+                                                  subCategory;
+                                              _selectedItemType = 'All';
+                                            }),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                            ),
+                          ),
+                        ],
+                        if (_selectedMainCategory != 'All' &&
+                            _selectedSubCategory != 'All') ...[
+                          const SizedBox(height: 16),
                           Text(
                             'Item Type',
                             style: Theme.of(context).textTheme.titleMedium
@@ -456,7 +605,6 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                       .toList(),
                             ),
                           ),
-                          const SizedBox(height: 16),
                         ],
                         Row(
                           children: [

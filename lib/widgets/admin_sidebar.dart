@@ -17,6 +17,7 @@ class AdminSidebar extends StatelessWidget {
       ('User Management', Icons.people_outline),
       ('System Logs', Icons.security_outlined),
       ('Reports', Icons.bar_chart_outlined),
+      ('My Account', Icons.person_outline),
     ];
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,

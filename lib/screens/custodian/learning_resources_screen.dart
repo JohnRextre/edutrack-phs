@@ -796,36 +796,39 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Sub-Category',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    if (_selectedMainCategory !=
+                        ResourceTaxonomy.filterAll) ...[
+                      const SizedBox(height: 20),
+                      Text(
+                        'Sub-Category',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: subCategories.map((subCategory) {
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              label: Text(subCategory),
-                              selected: _selectedSubCategory == subCategory,
-                              onSelected: (_) {
-                                setState(() {
-                                  _selectedSubCategory = subCategory;
-                                  _selectedItemType =
-                                      ResourceTaxonomy.filterAll;
-                                });
-                              },
-                            ),
-                          );
-                        }).toList(),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: subCategories.map((subCategory) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: FilterChip(
+                                label: Text(subCategory),
+                                selected: _selectedSubCategory == subCategory,
+                                onSelected: (_) {
+                                  setState(() {
+                                    _selectedSubCategory = subCategory;
+                                    _selectedItemType =
+                                        ResourceTaxonomy.filterAll;
+                                  });
+                                },
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
-                    ),
-                    if (_selectedSubCategory != ResourceTaxonomy.filterAll) ...[
+                    ],
+                    if (_selectedMainCategory != ResourceTaxonomy.filterAll &&
+                        _selectedSubCategory != ResourceTaxonomy.filterAll) ...[
                       const SizedBox(height: 16),
                       Text(
                         'Item Type',

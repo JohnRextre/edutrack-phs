@@ -122,6 +122,7 @@ class BorrowTransaction {
     this.requiredReturnType,
     this.itemConditionNotes,
     this.overdueReason,
+    this.returnProofImage,
   });
 
   final String id;
@@ -161,6 +162,9 @@ class BorrowTransaction {
 
   /// Required explanation when returning past the due date.
   final String? overdueReason;
+
+  /// Optional base64 data URI / http URL of proof image attached by borrower at return time.
+  final String? returnProofImage;
 
   /// Derives `overdue` when still borrowed past the expected return date.
   String get effectiveStatus {
@@ -258,6 +262,7 @@ class BorrowTransaction {
       if (requiredReturnType != null) 'requiredReturnType': requiredReturnType,
       if (itemConditionNotes != null) 'itemConditionNotes': itemConditionNotes,
       if (overdueReason != null) 'overdueReason': overdueReason,
+      if (returnProofImage != null) 'returnProofImage': returnProofImage,
     };
   }
 
@@ -283,6 +288,7 @@ class BorrowTransaction {
       requiredReturnType: map['requiredReturnType']?.toString(),
       itemConditionNotes: map['itemConditionNotes']?.toString(),
       overdueReason: map['overdueReason']?.toString(),
+      returnProofImage: map['returnProofImage']?.toString(),
     );
   }
 

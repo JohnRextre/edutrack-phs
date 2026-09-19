@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/borrow_transaction_model.dart';
 import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
+import '../widgets/proof_image_attachment_field.dart';
 
 /// Optional borrower flow to submit return details before custodian verification.
 class BorrowerReturnScreen extends StatefulWidget {
@@ -17,7 +18,7 @@ class BorrowerReturnScreen extends StatefulWidget {
 class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
   final _remarksController = TextEditingController();
   final _borrowService = BorrowService();
-  bool _photoAttached = false;
+  String? _proofImageUrl;
   bool _isSubmitting = false;
 
   @override
@@ -27,7 +28,7 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_photoAttached) {
+    if (_proofImageUrl == null || _proofImageUrl!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please upload a photo of the item first.'),
@@ -40,7 +41,11 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await _borrowService.submitReturnRequest(widget.transaction.id);
+      await _borrowService.submitReturnRequest(
+        widget.transaction.id,
+        itemConditionNotes: _remarksController.text.trim(),
+        returnProofImage: _proofImageUrl,
+      );
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,8 +91,8 @@ class _BorrowerReturnScreenState extends State<BorrowerReturnScreen> {
           const SizedBox(height: 20),
           _InitiateReturnCard(
             remarksController: _remarksController,
-            photoAttached: _photoAttached,
-            onPhotoTap: () => setState(() => _photoAttached = true),
+            proofImageUrl: _proofImageUrl,
+            onImageChanged: (url) => setState(() => _proofImageUrl = url),
             onCancel: () => Navigator.of(context).pop(),
             onSubmit: _submit,
           ),
@@ -285,14 +290,14 @@ class _TimelineStep extends StatelessWidget {
 class _InitiateReturnCard extends StatelessWidget {
   const _InitiateReturnCard({
     required this.remarksController,
-    required this.photoAttached,
-    required this.onPhotoTap,
+    required this.proofImageUrl,
+    required this.onImageChanged,
     required this.onCancel,
     required this.onSubmit,
   });
   final TextEditingController remarksController;
-  final bool photoAttached;
-  final VoidCallback onPhotoTap;
+  final String? proofImageUrl;
+  final ValueChanged<String?> onImageChanged;
   final VoidCallback onCancel;
   final VoidCallback onSubmit;
 
@@ -314,41 +319,11 @@ class _InitiateReturnCard extends StatelessWidget {
             'Please provide a photo of the item to verify its condition before returning it to the property custodian.',
           ),
           const SizedBox(height: 18),
-          InkWell(
-            onTap: onPhotoTap,
-            borderRadius: BorderRadius.circular(12),
-            child: CustomPaint(
-              painter: _DashedBorderPainter(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-              child: SizedBox(
-                height: 145,
-                width: double.infinity,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      child: Icon(
-                        photoAttached
-                            ? Icons.check
-                            : Icons.add_a_photo_outlined,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      photoAttached ? 'Photo Attached' : 'Upload Photo',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text('Tap to capture or select from gallery'),
-                  ],
-                ),
-              ),
-            ),
+          ProofImageAttachmentField(
+            imageUrl: proofImageUrl,
+            title: 'Attach Item Photo Proof',
+            subtitle: 'Take a photo or choose from gallery or presets',
+            onImageChanged: onImageChanged,
           ),
           const SizedBox(height: 20),
           TextField(
@@ -380,28 +355,4 @@ class _InitiateReturnCard extends StatelessWidget {
       ),
     ),
   );
-}
-
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color});
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const radius = Radius.circular(12);
-    final rect = RRect.fromRectAndRadius(Offset.zero & size, radius);
-    final path = Path()..addRRect(rect);
-    final metric = path.computeMetrics().first;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.3;
-    for (double distance = 0; distance < metric.length; distance += 8) {
-      canvas.drawPath(metric.extractPath(distance, distance + 4), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

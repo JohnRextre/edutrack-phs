@@ -22,38 +22,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: user == null
-          ? const _ProfileMessage('Please sign in to view your profile.')
-          : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection(AuthService.usersCollection)
-                  .doc(user.uid)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const _ProfileMessage(
-                    'Unable to load your profile right now.',
-                  );
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final data = snapshot.data?.data();
-                if (data == null) {
-                  return const _ProfileMessage(
-                    'Profile information not found.',
-                  );
-                }
-                return _ProfileContent(
-                  data: data,
-                  authUser: user,
-                  onEditProfile: () => _showEditProfile(context, user, data),
-                );
-              },
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: user == null
+          ? null
+          : FirebaseFirestore.instance
+                .collection(AuthService.usersCollection)
+                .doc(user.uid)
+                .snapshots(),
+      builder: (context, snapshot) {
+        if (user == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: const _ProfileMessage('Please sign in to view your profile.'),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: const _ProfileMessage(
+              'Unable to load your profile right now.',
             ),
-      bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 3),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final data = snapshot.data?.data();
+        if (data == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: const _ProfileMessage('Profile information not found.'),
+          );
+        }
+
+        final role = AuthService.roleFromString(_value(data['role']));
+        final isBorrower =
+            role.toLowerCase() == 'student' || role.toLowerCase() == 'teacher';
+
+        return Scaffold(
+          appBar: AppBar(title: Text(isBorrower ? 'Profile' : 'My Account')),
+          body: _ProfileContent(
+            data: data,
+            authUser: user,
+            onEditProfile: () => _showEditProfile(context, user, data),
+          ),
+          bottomNavigationBar: isBorrower
+              ? const BorrowerNavigationBar(selectedIndex: 3)
+              : null,
+        );
+      },
     );
   }
 
@@ -98,6 +121,7 @@ class _ProfileContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final firstName = _value(data['firstName']);
     final lastName = _value(data['lastName']);
     final fullName = [
@@ -109,6 +133,11 @@ class _ProfileContent extends StatelessWidget {
         : fullName;
     final role = AuthService.roleFromString(_value(data['role']));
     final isStudent = role.toLowerCase() == 'student';
+    final isAdmin =
+        role.toLowerCase() == 'ict coordinator' ||
+        role.toLowerCase() == 'admin';
+    final isBorrower =
+        role.toLowerCase() == 'student' || role.toLowerCase() == 'teacher';
     final sectionOrDepartment = isStudent
         ? _firstValue(data, ['gradeSection', 'section'])
         : _firstValue(data, ['department', 'departmentOrSection']);
@@ -116,24 +145,20 @@ class _ProfileContent extends StatelessWidget {
     final email = _firstValue(data, ['email']);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
+        // User Banner
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             gradient: LinearGradient(
-              colors: [
-                Theme.of(context).colorScheme.primaryContainer,
-                Theme.of(context).colorScheme.surfaceContainerHighest,
-              ],
+              colors: [colors.primaryContainer, colors.surfaceContainerHighest],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(
-                  context,
-                ).colorScheme.shadow.withValues(alpha: .12),
+                color: colors.shadow.withValues(alpha: .12),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -145,11 +170,11 @@ class _ProfileContent extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 36,
-                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  backgroundColor: colors.primary,
                   child: Text(
                     _initials(displayName),
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
+                      color: colors.onPrimary,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -184,6 +209,8 @@ class _ProfileContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+
+        // Personal Details Card
         Card(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -191,8 +218,10 @@ class _ProfileContent extends StatelessWidget {
           child: Column(
             children: [
               _DetailTile(
-                icon: Icons.lock_outline,
-                title: 'School ID / LRN',
+                icon: Icons.badge_outlined,
+                title: isStudent
+                    ? 'School ID / LRN'
+                    : 'Employee ID / School ID',
                 value: identifier.isEmpty ? 'Not available' : identifier,
               ),
               const Divider(height: 1),
@@ -203,14 +232,16 @@ class _ProfileContent extends StatelessWidget {
                     ? authUser.email ?? 'Not available'
                     : email,
               ),
-              const Divider(height: 1),
-              _DetailTile(
-                icon: Icons.school_outlined,
-                title: isStudent ? 'Section' : 'Department',
-                value: sectionOrDepartment.isEmpty
-                    ? 'Not available'
-                    : sectionOrDepartment,
-              ),
+              if (isStudent || sectionOrDepartment.isNotEmpty) ...[
+                const Divider(height: 1),
+                _DetailTile(
+                  icon: Icons.school_outlined,
+                  title: isStudent ? 'Section' : 'Department',
+                  value: sectionOrDepartment.isEmpty
+                      ? 'Not available'
+                      : sectionOrDepartment,
+                ),
+              ],
               const Divider(height: 1),
               _DetailTile(
                 icon: Icons.phone_outlined,
@@ -223,59 +254,83 @@ class _ProfileContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+
+        // Account Options Card
         Card(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             children: [
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('Account Activities'),
-                subtitle: const Text('View borrowing and transaction history'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const AccountActivitiesScreen(),
+              if (isBorrower) ...[
+                ListTile(
+                  leading: Icon(Icons.history, color: colors.primary),
+                  title: const Text('Account Activities'),
+                  subtitle: const Text(
+                    'View borrowing and transaction history',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AccountActivitiesScreen(),
+                    ),
                   ),
                 ),
-              ),
-              const Divider(height: 1),
+                const Divider(height: 1),
+              ],
               ListTile(
-                leading: const Icon(Icons.security_outlined),
-                title: const Text('Security'),
-                subtitle: const Text('Password and account security'),
+                leading: Icon(Icons.lock_outline, color: colors.primary),
+                title: const Text('Password & Security'),
+                subtitle: const Text(
+                  'Change password and manage account protection',
+                ),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _showSecurityDialog(context),
+                onTap: () => _showPasswordSecuritySheet(context),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 28),
-        FilledButton.icon(
+
+        // Delete Account Section (Admin role excluded)
+        if (!isAdmin) ...[
+          const SizedBox(height: 16),
+          _DeleteAccountCard(onDelete: () => _showDeleteAccountDialog(context)),
+        ],
+        const SizedBox(height: 24),
+
+        // Log out button
+        FilledButton.tonalIcon(
           onPressed: () => _confirmLogout(context),
           icon: const Icon(Icons.logout),
           label: const Text('Log out'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
         ),
       ],
     );
   }
 
-  void _showSecurityDialog(BuildContext context) {
+  void _showPasswordSecuritySheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: _PasswordSecurityModal(authUser: authUser),
+      ),
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Security'),
-        content: const Text(
-          'To change your password, use the password reset option associated with your account email.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (_) =>
+          _DeleteAccountDialog(authUser: authUser, uid: authUser.uid),
     );
   }
 
@@ -334,6 +389,694 @@ class _DetailTile extends StatelessWidget {
       title: Text(title),
       subtitle: Text(value),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+}
+
+/// Password & Security Bottom Sheet using system theme colors.
+class _PasswordSecurityModal extends StatefulWidget {
+  const _PasswordSecurityModal({required this.authUser});
+
+  final User authUser;
+
+  @override
+  State<_PasswordSecurityModal> createState() => _PasswordSecurityModalState();
+}
+
+class _PasswordSecurityModalState extends State<_PasswordSecurityModal> {
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  bool _isChanging = false;
+
+  @override
+  void dispose() {
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  ({String label, double fraction, Color color}) _calculateStrength(
+    String password,
+    ColorScheme colors,
+  ) {
+    if (password.isEmpty) {
+      return (
+        label: 'Enter a password',
+        fraction: 0.0,
+        color: colors.onSurfaceVariant,
+      );
+    }
+
+    final hasUppercase = RegExp(r'[A-Z]').hasMatch(password);
+    final hasLowercase = RegExp(r'[a-z]').hasMatch(password);
+    final hasDigits = RegExp(r'[0-9]').hasMatch(password);
+    final hasSpecialCharacters = RegExp(
+      r'[!@#\$%^&*(),.?":{}|<>]',
+    ).hasMatch(password);
+
+    int criteria = 0;
+    if (hasUppercase) criteria++;
+    if (hasLowercase) criteria++;
+    if (hasDigits) criteria++;
+    if (hasSpecialCharacters) criteria++;
+
+    if (password.length < 8 || criteria <= 2) {
+      return (label: 'Weak', fraction: 0.33, color: colors.error);
+    } else if (criteria == 3) {
+      return (
+        label: 'Medium',
+        fraction: 0.66,
+        color: Colors.amber[800] ?? Colors.orange,
+      );
+    } else {
+      return (
+        label: 'Strong',
+        fraction: 1.0,
+        color: Colors.green[700] ?? Colors.green,
+      );
+    }
+  }
+
+  Future<void> _handleChangePassword() async {
+    final currentPassword = _currentPasswordController.text.trim();
+    final newPassword = _newPasswordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (currentPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your current password.')),
+      );
+      return;
+    }
+
+    if (newPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a new password.')),
+      );
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('New password must be at least 8 characters long.'),
+        ),
+      );
+      return;
+    }
+
+    if (newPassword != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('New password and confirm password do not match.'),
+        ),
+      );
+      return;
+    }
+
+    if (newPassword == currentPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'New password must be different from your current password.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isChanging = true);
+
+    try {
+      final email = widget.authUser.email;
+      if (email == null) {
+        throw FirebaseAuthException(
+          code: 'invalid-email',
+          message: 'No email found for this user account.',
+        );
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+
+      await widget.authUser.reauthenticateWithCredential(credential);
+      await widget.authUser.updatePassword(newPassword);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password updated successfully!'),
+          backgroundColor: Color(0xFF2E7D32),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AuthService.friendlyErrorMessage(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isChanging = false);
+    }
+  }
+
+  InputDecoration _fieldDecoration(
+    String hintText,
+    bool isObscured,
+    VoidCallback onToggle,
+    ColorScheme colors,
+  ) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(
+        fontSize: 14,
+        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: colors.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: colors.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: colors.primary, width: 2),
+      ),
+      suffixIcon: IconButton(
+        icon: Icon(
+          isObscured
+              ? Icons.visibility_outlined
+              : Icons.visibility_off_outlined,
+          color: colors.onSurfaceVariant,
+          size: 20,
+        ),
+        onPressed: onToggle,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final strength = _calculateStrength(_newPasswordController.text, colors);
+
+    return Material(
+      color: colors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.onSurfaceVariant.withValues(alpha: .35),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'ACCOUNT PROTECTION',
+                    style: TextStyle(
+                      color: colors.primary,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Password & Security',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Update your password regularly to keep your account protected.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 13.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: colors.outlineVariant),
+              const SizedBox(height: 16),
+              Text(
+                'Current Password',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                  color: colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _currentPasswordController,
+                obscureText: _obscureCurrent,
+                decoration: _fieldDecoration(
+                  'Enter current password',
+                  _obscureCurrent,
+                  () => setState(() => _obscureCurrent = !_obscureCurrent),
+                  colors,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'New Password',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                  color: colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _newPasswordController,
+                obscureText: _obscureNew,
+                onChanged: (_) => setState(() {}),
+                decoration: _fieldDecoration(
+                  'Enter new password',
+                  _obscureNew,
+                  () => setState(() => _obscureNew = !_obscureNew),
+                  colors,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Password strength',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    strength.label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: strength.color,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: strength.fraction,
+                  minHeight: 5,
+                  backgroundColor: colors.surfaceContainerHighest,
+                  valueColor: AlwaysStoppedAnimation<Color>(strength.color),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Use at least 8 characters with uppercase, lowercase, number, and symbol.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Confirm Password',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                  color: colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _confirmPasswordController,
+                obscureText: _obscureConfirm,
+                decoration: _fieldDecoration(
+                  'Confirm new password',
+                  _obscureConfirm,
+                  () => setState(() => _obscureConfirm = !_obscureConfirm),
+                  colors,
+                ),
+              ),
+              const SizedBox(height: 22),
+              FilledButton(
+                onPressed: _isChanging ? null : _handleChangePassword,
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: colors.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: _isChanging
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.onPrimary,
+                        ),
+                      )
+                    : const Text(
+                        'Change Password',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Delete Account Card in the profile view using system theme colors.
+class _DeleteAccountCard extends StatelessWidget {
+  const _DeleteAccountCard({required this.onDelete});
+
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colors.error.withValues(alpha: 0.4)),
+      ),
+      color: colors.errorContainer.withValues(alpha: 0.15),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PERMANENT ACTION',
+              style: TextStyle(
+                color: colors.error,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Delete Account',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: colors.error,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Are you sure you want to delete this account? This action is irreversible.',
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text(
+                'Delete Account',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.error,
+                foregroundColor: colors.onError,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                elevation: 0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Delete Account Confirmation Modal Dialog that handles keyboard insets cleanly without overflowing.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog({required this.authUser, required this.uid});
+
+  final User authUser;
+  final String uid;
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _confirmController = TextEditingController();
+  bool _isDeleting = false;
+
+  @override
+  void dispose() {
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleDelete() async {
+    setState(() => _isDeleting = true);
+    try {
+      // 1. Delete Firestore user record
+      await FirebaseFirestore.instance
+          .collection(AuthService.usersCollection)
+          .doc(widget.uid)
+          .delete();
+
+      // 2. Delete Firebase Auth account
+      try {
+        await widget.authUser.delete();
+      } catch (_) {
+        // If re-authentication is required, auth deletion might fail, but document is removed and user is signed out
+      }
+
+      // 3. Sign out and redirect
+      await AuthService.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your account has been deleted.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isDeleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AuthService.friendlyErrorMessage(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final canConfirm = _confirmController.text.trim() == 'Delete';
+
+    return Dialog(
+      backgroundColor: colors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'PERMANENT ACTION',
+                  style: TextStyle(
+                    color: colors.error,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.close,
+                    size: 20,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: _isDeleting ? null : () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Delete Account',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Are you sure you want to delete this account? This action is irreversible.',
+              style: TextStyle(fontSize: 13.5, color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Confirmation',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+                color: colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _confirmController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: "Type 'Delete' to confirm",
+                hintStyle: TextStyle(
+                  fontSize: 14,
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: colors.outlineVariant),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: colors.outlineVariant),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: colors.error, width: 2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: _isDeleting ? null : () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    side: BorderSide(color: colors.outlineVariant),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.icon(
+                  onPressed: canConfirm && !_isDeleting ? _handleDelete : null,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: _isDeleting
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colors.onError,
+                          ),
+                        )
+                      : const Text(
+                          'Delete Account',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.error,
+                    foregroundColor: colors.onError,
+                    disabledBackgroundColor: colors.error.withValues(
+                      alpha: 0.38,
+                    ),
+                    disabledForegroundColor: colors.onError.withValues(
+                      alpha: 0.6,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -489,7 +1232,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     _isStudent ? 'Section / Grade' : 'Department',
                     Icons.school_outlined,
                   ),
-                  validator: _required,
+                  validator: _isStudent ? _required : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
