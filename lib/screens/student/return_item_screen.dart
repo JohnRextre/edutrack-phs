@@ -56,7 +56,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
         ),
       );
       Navigator.of(context).pop();
-      Navigator.of(context).pushNamed('/my-requests');
+      Navigator.of(context).pushNamed('/my-borrowings', arguments: 1);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -25,12 +25,12 @@ class QrCodeResult {
   }
 
   Map<String, dynamic> toMap() => {
-        'success': success,
-        'statusCode': statusCode,
-        'imageUrl': imageUrl,
-        'message': message,
-        'jsonResponse': jsonResponse,
-      };
+    'success': success,
+    'statusCode': statusCode,
+    'imageUrl': imageUrl,
+    'message': message,
+    'jsonResponse': jsonResponse,
+  };
 
   static String _statusText(int code) {
     switch (code) {
@@ -63,6 +63,7 @@ class QrService {
     String? itemName,
     String? mainCategory,
     String? subCategory,
+    String? storageLocation,
   }) {
     final trimmedCode = itemCode.trim();
     if (trimmedCode.isEmpty) return '';
@@ -70,12 +71,14 @@ class QrService {
     final trimmedName = itemName?.trim() ?? '';
     final trimmedMainCategory = mainCategory?.trim() ?? '';
     final trimmedSubCategory = subCategory?.trim() ?? '';
+    final trimmedLocation = storageLocation?.trim() ?? '';
 
     return [
       'System: $systemIdentifier',
       'Item Name: $trimmedName',
       'Item Code: $trimmedCode',
       'Category: $trimmedMainCategory / $trimmedSubCategory',
+      if (trimmedLocation.isNotEmpty) 'Location: $trimmedLocation',
     ].join('\n');
   }
 
@@ -180,7 +183,8 @@ class QrService {
   }) {
     return {
       'statusCode': statusCode,
-      'status': statusOverride ??
+      'status':
+          statusOverride ??
           (statusCode != null ? QrCodeResult._statusText(statusCode) : 'Error'),
       'contentType': contentType ?? '',
       'requestUrl': requestUrl,

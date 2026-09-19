@@ -68,41 +68,35 @@ class BorrowerDashboardScreen extends StatelessWidget {
         const SizedBox(height: 16),
         const AccessBanner(
           text:
-              'Borrower Access: You can browse available learning resources, submit borrowing requests, view transaction status, and upload return verification photos.',
+              'Borrower Access: You can browse available learning resources, borrow items, view your borrowed inventory, and submit return verifications.',
         ),
         const SizedBox(height: 16),
         _BorrowerStats(userId: userId, borrowService: borrowService),
         const SizedBox(height: 18),
         Text(
           'Due Soon',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
         _DueSoonSection(userId: userId, borrowService: borrowService),
         const SizedBox(height: 18),
         Text(
           'Borrowing History',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
-        _BorrowingHistorySection(
-          userId: userId,
-          borrowService: borrowService,
-        ),
+        _BorrowingHistorySection(userId: userId, borrowService: borrowService),
       ],
     );
   }
 }
 
 class _BorrowerStats extends StatelessWidget {
-  const _BorrowerStats({
-    required this.userId,
-    required this.borrowService,
-  });
+  const _BorrowerStats({required this.userId, required this.borrowService});
 
   final String userId;
   final BorrowService borrowService;
@@ -121,50 +115,56 @@ class _BorrowerStats extends StatelessWidget {
 
         final metrics = snapshot.data ?? BorrowerDashboardMetrics.empty;
 
-        return LayoutBuilder(
-          builder: (context, constraints) => GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: constraints.maxWidth < 600 ? 0.95 : 1.45,
-            children: [
-              _StatCard(
-                label: 'My Borrowed Resources',
-                value: metrics.borrowedCount.toString(),
-                icon: Icons.inventory_2_outlined,
-                onTap: () => Navigator.pushNamed(context, '/my-borrowings'),
-              ),
-              _StatCard(
-                label: 'Pending Borrow Requests',
-                value: metrics.pendingBorrowCount.toString(),
-                icon: Icons.pending_actions_outlined,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/my-requests',
-                  arguments: 0,
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _StatCard(
+                    label: 'My Borrowed Resources',
+                    value: metrics.borrowedCount.toString(),
+                    icon: Icons.inventory_2_outlined,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      '/my-borrowings',
+                      arguments: 0,
+                    ),
+                  ),
                 ),
-              ),
-              _StatCard(
-                label: 'Pending Return Requests',
-                value: metrics.pendingReturnCount.toString(),
-                icon: Icons.assignment_turned_in_outlined,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/my-requests',
-                  arguments: 1,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatCard(
+                    label: 'Pending Return Requests',
+                    value: metrics.pendingReturnCount.toString(),
+                    icon: Icons.assignment_turned_in_outlined,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      '/my-borrowings',
+                      arguments: 1,
+                    ),
+                  ),
                 ),
-              ),
-              _StatCard(
-                label: 'Overdue Resources',
-                value: metrics.overdueCount.toString(),
-                icon: Icons.warning_amber_outlined,
-                accentColor: metrics.overdueCount > 0 ? Colors.red : null,
-                onTap: () => Navigator.pushNamed(context, '/my-borrowings'),
-              ),
-            ],
-          ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatCard(
+                    label: 'Overdue Resources',
+                    value: metrics.overdueCount.toString(),
+                    icon: Icons.warning_amber_outlined,
+                    accentColor: metrics.overdueCount > 0 ? Colors.red : null,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      '/my-borrowings',
+                      arguments: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         );
       },
     );
@@ -225,10 +225,7 @@ class _StatCard extends StatelessWidget {
 }
 
 class _DueSoonSection extends StatelessWidget {
-  const _DueSoonSection({
-    required this.userId,
-    required this.borrowService,
-  });
+  const _DueSoonSection({required this.userId, required this.borrowService});
 
   final String userId;
   final BorrowService borrowService;
@@ -367,8 +364,7 @@ class _HistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isReturned =
-        transaction.status == BorrowTransactionStatus.returned;
+    final isReturned = transaction.status == BorrowTransactionStatus.returned;
     final iconColor = isReturned ? Colors.green.shade700 : Colors.red.shade700;
 
     return Card(
@@ -403,10 +399,7 @@ class _HistoryTile extends StatelessWidget {
 }
 
 class _EmptyStateCard extends StatelessWidget {
-  const _EmptyStateCard({
-    required this.icon,
-    required this.message,
-  });
+  const _EmptyStateCard({required this.icon, required this.message});
 
   final IconData icon;
   final String message;

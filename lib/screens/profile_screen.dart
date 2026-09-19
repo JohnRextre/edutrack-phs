@@ -53,7 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 );
               },
             ),
-      bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 4),
+      bottomNavigationBar: const BorrowerNavigationBar(selectedIndex: 3),
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../models/resource_item.dart';
@@ -17,6 +19,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ResourceService _resourceService = ResourceService();
 
+  bool _isGridView = false;
   String _selectedMainCategory = ResourceTaxonomy.filterAll;
   String _selectedSubCategory = ResourceTaxonomy.filterAll;
   String _selectedItemType = ResourceTaxonomy.filterAll;
@@ -35,6 +38,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
         final matchesSearch =
             item.itemName.toLowerCase().contains(query) ||
             item.itemCode.toLowerCase().contains(query) ||
+            item.storageLocation.toLowerCase().contains(query) ||
             item.description.toLowerCase().contains(query);
         if (!matchesSearch) return false;
       }
@@ -88,6 +92,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
       itemName: resource.itemName,
       mainCategory: resource.mainCategory,
       subCategory: resource.subCategory,
+      storageLocation: resource.storageLocation,
     );
 
     showDialog<void>(
@@ -118,9 +123,9 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
             children: [
               Text(
                 resource.itemName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
@@ -131,6 +136,17 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
+              if (resource.storageLocation.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'Location: ${resource.storageLocation}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: 16),
               Image.network(
                 result.imageUrl!,
@@ -188,45 +204,462 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
   }
 
   void _confirmDelete(ResourceItem resource) {
+    _DeleteOption selectedOption = resource.availableQuantity > 0
+        ? _DeleteOption.quantity
+        : _DeleteOption.all;
+    int deleteQty = resource.availableQuantity > 0 ? 1 : 0;
+    final qtyController = TextEditingController(
+      text: deleteQty > 0 ? '$deleteQty' : '0',
+    );
+    bool isProcessing = false;
+    String? customError;
+
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Resource'),
-        content: Text(
-          'Are you sure you want to delete "${resource.itemName}"? '
-          'This will remove it from the catalog.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              try {
-                await _resourceService.deleteResource(resource.id);
-                if (!mounted) return;
-                _showSnackBar('${resource.itemName} deleted successfully.');
-              } catch (error) {
-                _showSnackBar(
-                  ResourceService.friendlyErrorMessage(error),
-                  isError: true,
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final colorScheme = Theme.of(context).colorScheme;
+            final textTheme = Theme.of(context).textTheme;
+            final hasAvailable = resource.availableQuantity > 0;
+
+            void updateQty(int newQty) {
+              final clamped = newQty.clamp(1, resource.availableQuantity);
+              setDialogState(() {
+                deleteQty = clamped;
+                qtyController.text = '$clamped';
+                customError = null;
+              });
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.delete_outline, color: Colors.red.shade700),
+                  const SizedBox(width: 8),
+                  const Text('Delete Resource'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 400,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Resource Summary Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.5,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: colorScheme.outlineVariant),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              resource.itemName,
+                              style: textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Code: ${resource.itemCode} • ${resource.subCategory}',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (resource.storageLocation.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    size: 14,
+                                    color: colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      resource.storageLocation,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.primary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                _QuantityBadge(
+                                  label: 'Available',
+                                  count: resource.availableQuantity,
+                                  color: resource.isAvailable
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700,
+                                ),
+                                _QuantityBadge(
+                                  label: 'Total',
+                                  count: resource.totalQuantity,
+                                  color: Colors.blue.shade700,
+                                ),
+                                if (resource.borrowedQuantity > 0)
+                                  _QuantityBadge(
+                                    label: 'Borrowed',
+                                    count: resource.borrowedQuantity,
+                                    color: Colors.orange.shade800,
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Selection: Delete Quantity vs Delete All Item
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<_DeleteOption>(
+                          segments: const [
+                            ButtonSegment<_DeleteOption>(
+                              value: _DeleteOption.quantity,
+                              label: Text('Delete Quantity'),
+                              icon: Icon(Icons.remove_circle_outline, size: 18),
+                            ),
+                            ButtonSegment<_DeleteOption>(
+                              value: _DeleteOption.all,
+                              label: Text('Delete All Item'),
+                              icon: Icon(
+                                Icons.delete_forever_outlined,
+                                size: 18,
+                              ),
+                            ),
+                          ],
+                          selected: {selectedOption},
+                          onSelectionChanged: (newSelection) {
+                            setDialogState(() {
+                              selectedOption = newSelection.first;
+                              customError = null;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      if (selectedOption == _DeleteOption.quantity) ...[
+                        if (!hasAvailable) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.shade300),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Colors.amber.shade900,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'No items available in stock to delete. All items are currently borrowed.',
+                                    style: TextStyle(
+                                      color: Colors.amber.shade900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else ...[
+                          Text(
+                            'Quantity to Delete:',
+                            style: textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              IconButton.filledTonal(
+                                onPressed: deleteQty > 1
+                                    ? () => updateQty(deleteQty - 1)
+                                    : null,
+                                icon: const Icon(Icons.remove),
+                                tooltip: 'Decrease',
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: qtyController,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  decoration: InputDecoration(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                      horizontal: 8,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    errorText: customError,
+                                  ),
+                                  onChanged: (val) {
+                                    final parsed = int.tryParse(val.trim());
+                                    if (parsed != null &&
+                                        parsed >= 1 &&
+                                        parsed <= resource.availableQuantity) {
+                                      setDialogState(() {
+                                        deleteQty = parsed;
+                                        customError = null;
+                                      });
+                                    } else if (parsed != null &&
+                                        parsed > resource.availableQuantity) {
+                                      setDialogState(() {
+                                        customError =
+                                            'Max is ${resource.availableQuantity}';
+                                      });
+                                    } else {
+                                      setDialogState(() {
+                                        customError = 'Invalid quantity';
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                onPressed:
+                                    deleteQty < resource.availableQuantity
+                                    ? () => updateQty(deleteQty + 1)
+                                    : null,
+                                icon: const Icon(Icons.add),
+                                tooltip: 'Increase',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Quick selection chips
+                          Wrap(
+                            spacing: 6,
+                            children: [
+                              ActionChip(
+                                label: const Text('1 item'),
+                                onPressed: () => updateQty(1),
+                              ),
+                              if (resource.availableQuantity >= 5)
+                                ActionChip(
+                                  label: const Text('5 items'),
+                                  onPressed: () => updateQty(5),
+                                ),
+                              if (resource.availableQuantity > 1)
+                                ActionChip(
+                                  label: Text(
+                                    'All Available (${resource.availableQuantity})',
+                                  ),
+                                  onPressed: () =>
+                                      updateQty(resource.availableQuantity),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Calculation preview
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: colorScheme.outlineVariant,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Summary After Deletion:',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '• New Available: ${resource.availableQuantity - deleteQty}',
+                                  style: textTheme.bodySmall,
+                                ),
+                                Text(
+                                  '• New Total: ${resource.totalQuantity - deleteQty}',
+                                  style: textTheme.bodySmall,
+                                ),
+                                if (resource.totalQuantity - deleteQty <= 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'ℹ️ Total quantity will reach 0; the resource item will be removed from inventory.',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: Colors.blue.shade700,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        // Delete All Item view
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Colors.red.shade800,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Permanently delete "${resource.itemName}"?',
+                                      style: TextStyle(
+                                        color: Colors.red.shade900,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'This will delete all ${resource.totalQuantity} item(s) and completely remove this resource from the system catalog.',
+                                style: TextStyle(
+                                  color: Colors.red.shade900,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (resource.borrowedQuantity > 0) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  '⚠️ Notice: ${resource.borrowedQuantity} item(s) are currently marked as borrowed.',
+                                  style: TextStyle(
+                                    color: Colors.red.shade900,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                  ),
+                  onPressed:
+                      isProcessing ||
+                          (selectedOption == _DeleteOption.quantity &&
+                              (!hasAvailable ||
+                                  deleteQty <= 0 ||
+                                  deleteQty > resource.availableQuantity ||
+                                  customError != null))
+                      ? null
+                      : () async {
+                          setDialogState(() => isProcessing = true);
+                          try {
+                            if (selectedOption == _DeleteOption.quantity) {
+                              await _resourceService.deleteQuantity(
+                                id: resource.id,
+                                quantityToDelete: deleteQty,
+                              );
+                              if (context.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                              if (!mounted) return;
+                              _showSnackBar(
+                                'Successfully deleted $deleteQty item(s) from "${resource.itemName}".',
+                              );
+                            } else {
+                              await _resourceService.deleteResource(
+                                resource.id,
+                              );
+                              if (context.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                              if (!mounted) return;
+                              _showSnackBar(
+                                'Resource "${resource.itemName}" deleted completely.',
+                              );
+                            }
+                          } catch (error) {
+                            setDialogState(() => isProcessing = false);
+                            if (!mounted) return;
+                            _showSnackBar(
+                              ResourceService.friendlyErrorMessage(error),
+                              isError: true,
+                            );
+                          }
+                        },
+                  child: isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          selectedOption == _DeleteOption.quantity
+                              ? 'Delete $deleteQty Item${deleteQty > 1 ? 's' : ''}'
+                              : 'Delete All Item',
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final subCategories =
-        ResourceTaxonomy.filterSubCategories(_selectedMainCategory);
+    final subCategories = ResourceTaxonomy.filterSubCategories(
+      _selectedMainCategory,
+    );
     final itemTypes = ResourceTaxonomy.filterItemTypes(
       mainCategory: _selectedMainCategory,
       subCategory: _selectedSubCategory,
@@ -320,8 +753,8 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                                 ResourceTaxonomy.mainCategoryGeneralLearning,
                             onSelected: () {
                               setState(() {
-                                _selectedMainCategory =
-                                    ResourceTaxonomy.mainCategoryGeneralLearning;
+                                _selectedMainCategory = ResourceTaxonomy
+                                    .mainCategoryGeneralLearning;
                                 _selectedSubCategory =
                                     ResourceTaxonomy.filterAll;
                                 _selectedItemType = ResourceTaxonomy.filterAll;
@@ -383,7 +816,8 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                               onSelected: (_) {
                                 setState(() {
                                   _selectedSubCategory = subCategory;
-                                  _selectedItemType = ResourceTaxonomy.filterAll;
+                                  _selectedItemType =
+                                      ResourceTaxonomy.filterAll;
                                 });
                               },
                             ),
@@ -395,9 +829,8 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Item Type',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 10),
                       SingleChildScrollView(
@@ -424,13 +857,70 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                       ),
                     ],
                     const SizedBox(height: 20),
-                    Text(
-                      'Inventory (${filteredResources.length})',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Inventory (${filteredResources.length})',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  Icons.view_list_rounded,
+                                  color: !_isGridView
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                                tooltip: 'List View',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  if (_isGridView) {
+                                    setState(() => _isGridView = false);
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.grid_view_rounded,
+                                  color: _isGridView
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                                tooltip: 'Grid View',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  if (!_isGridView) {
+                                    setState(() => _isGridView = true);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     if (filteredResources.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 32),
@@ -440,6 +930,28 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                             style: TextStyle(fontSize: 16, color: Colors.grey),
                           ),
                         ),
+                      )
+                    else if (_isGridView)
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filteredResources.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.62,
+                            ),
+                        itemBuilder: (context, index) {
+                          final resource = filteredResources[index];
+                          return _InventoryGridCard(
+                            resource: resource,
+                            onEdit: () => _openAddEditScreen(resource),
+                            onQr: () => _showQrCode(resource),
+                            onDelete: () => _confirmDelete(resource),
+                          );
+                        },
                       )
                     else
                       ...filteredResources.map(
@@ -465,6 +977,68 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Add New Resource'),
       ),
+    );
+  }
+}
+
+Widget _buildResourceImage({
+  required String? imageUrl,
+  required IconData fallbackIcon,
+  required ColorScheme colorScheme,
+  double? width,
+  double? height,
+  BoxFit fit = BoxFit.cover,
+}) {
+  if (imageUrl == null || imageUrl.trim().isEmpty) {
+    return Icon(
+      fallbackIcon,
+      size: (height != null && height < 70) ? 30 : 36,
+      color: colorScheme.onSecondaryContainer,
+    );
+  }
+
+  final trimmed = imageUrl.trim();
+  if (trimmed.startsWith('data:image')) {
+    try {
+      final base64Data = trimmed.contains(',')
+          ? trimmed.split(',').last
+          : trimmed;
+      final bytes = base64Decode(base64Data);
+      return Image.memory(
+        bytes,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, _, _) => Icon(
+          fallbackIcon,
+          size: 32,
+          color: colorScheme.onSecondaryContainer,
+        ),
+      );
+    } catch (_) {
+      return Icon(
+        fallbackIcon,
+        size: 32,
+        color: colorScheme.onSecondaryContainer,
+      );
+    }
+  } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return Image.network(
+      trimmed,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, _, _) =>
+          Icon(fallbackIcon, size: 32, color: colorScheme.onSecondaryContainer),
+    );
+  } else {
+    return Image.asset(
+      trimmed,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, _, _) =>
+          Icon(fallbackIcon, size: 32, color: colorScheme.onSecondaryContainer),
     );
   }
 }
@@ -512,8 +1086,6 @@ class _InventoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final hasImage =
-        resource.imageUrl != null && resource.imageUrl!.trim().isNotEmpty;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -535,24 +1107,15 @@ class _InventoryCard extends StatelessWidget {
                 color: colorScheme.secondaryContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: hasImage
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        resource.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Icon(
-                          resource.fallbackIcon,
-                          size: 32,
-                          color: colorScheme.onSecondaryContainer,
-                        ),
-                      ),
-                    )
-                  : Icon(
-                      resource.fallbackIcon,
-                      size: 32,
-                      color: colorScheme.onSecondaryContainer,
-                    ),
+              clipBehavior: Clip.antiAlias,
+              child: _buildResourceImage(
+                imageUrl: resource.imageUrl,
+                fallbackIcon: resource.fallbackIcon,
+                colorScheme: colorScheme,
+                width: 72,
+                height: 72,
+                fit: BoxFit.cover,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -574,6 +1137,32 @@ class _InventoryCard extends StatelessWidget {
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (resource.storageLocation.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 13,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            resource.storageLocation,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 6,
@@ -596,6 +1185,20 @@ class _InventoryCard extends StatelessWidget {
                         backgroundColor: resource.isAvailable
                             ? Colors.green.withValues(alpha: 0.2)
                             : Colors.red.withValues(alpha: 0.2),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      Chip(
+                        avatar: Icon(
+                          Icons.schedule_outlined,
+                          size: 13,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        label: Text(
+                          '${resource.maxBorrowDays}d limit',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        backgroundColor: colorScheme.surfaceContainerHigh,
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -625,6 +1228,240 @@ class _InventoryCard extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryGridCard extends StatelessWidget {
+  const _InventoryGridCard({
+    required this.resource,
+    required this.onEdit,
+    required this.onQr,
+    required this.onDelete,
+  });
+
+  final ResourceItem resource;
+  final VoidCallback onEdit;
+  final VoidCallback onQr;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      color: colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image header with status & duration badges
+          Stack(
+            children: [
+              Container(
+                width: double.infinity,
+                height: 110,
+                color: colorScheme.secondaryContainer,
+                child: _buildResourceImage(
+                  imageUrl: resource.imageUrl,
+                  fallbackIcon: resource.fallbackIcon,
+                  colorScheme: colorScheme,
+                  width: double.infinity,
+                  height: 110,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: resource.isAvailable
+                        ? Colors.green.shade700.withValues(alpha: 0.9)
+                        : Colors.red.shade700.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${resource.availableQuantity}/${resource.totalQuantity}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              if (resource.maxBorrowDays > 0)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${resource.maxBorrowDays}d limit',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // Content
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    resource.itemName,
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                      height: 1.15,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    resource.itemCode,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 10.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (resource.storageLocation.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 11,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            resource.storageLocation,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colorScheme.primary,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const Spacer(),
+                  // Compact action row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 17),
+                        tooltip: 'Edit',
+                        onPressed: onEdit,
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        icon: const Icon(Icons.qr_code_2_outlined, size: 17),
+                        tooltip: 'Generate QR',
+                        onPressed: onQr,
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                          size: 17,
+                        ),
+                        tooltip: 'Delete',
+                        onPressed: onDelete,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _DeleteOption { quantity, all }
+
+class _QuantityBadge extends StatelessWidget {
+  const _QuantityBadge({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        '$label: $count',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
         ),
       ),
     );

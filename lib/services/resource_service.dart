@@ -5,7 +5,7 @@ import '../models/resource_item.dart';
 /// Firestore-backed CRUD for the `resources` collection.
 class ResourceService {
   ResourceService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -35,6 +35,8 @@ class ResourceService {
     required int availableQuantity,
     required int maxBorrowLimit,
     required String description,
+    int maxBorrowDays = ResourceItem.defaultMaxBorrowDays,
+    String? storageLocation,
     String? imageUrl,
   }) async {
     final trimmedName = itemName.trim();
@@ -49,6 +51,7 @@ class ResourceService {
       totalQuantity: totalQuantity,
       availableQuantity: availableQuantity,
       maxBorrowLimit: maxBorrowLimit,
+      maxBorrowDays: maxBorrowDays,
     );
 
     if (await itemCodeExists(trimmedCode)) {
@@ -68,6 +71,10 @@ class ResourceService {
       'totalQuantity': totalQuantity,
       'availableQuantity': availableQuantity,
       'maxBorrowLimit': maxBorrowLimit,
+      'maxBorrowDays': maxBorrowDays < 1
+          ? ResourceItem.defaultMaxBorrowDays
+          : maxBorrowDays,
+      'storageLocation': storageLocation?.trim() ?? '',
       'description': description.trim(),
       'imageUrl': imageUrl?.trim() ?? '',
       'createdAt': FieldValue.serverTimestamp(),
@@ -85,6 +92,8 @@ class ResourceService {
     required int availableQuantity,
     required int maxBorrowLimit,
     required String description,
+    int maxBorrowDays = ResourceItem.defaultMaxBorrowDays,
+    String? storageLocation,
     String? imageUrl,
   }) async {
     final trimmedId = id.trim();
@@ -108,6 +117,7 @@ class ResourceService {
       totalQuantity: totalQuantity,
       availableQuantity: availableQuantity,
       maxBorrowLimit: maxBorrowLimit,
+      maxBorrowDays: maxBorrowDays,
     );
 
     if (await itemCodeExists(trimmedCode, excludeId: trimmedId)) {
@@ -127,6 +137,10 @@ class ResourceService {
       'totalQuantity': totalQuantity,
       'availableQuantity': availableQuantity,
       'maxBorrowLimit': maxBorrowLimit,
+      'maxBorrowDays': maxBorrowDays < 1
+          ? ResourceItem.defaultMaxBorrowDays
+          : maxBorrowDays,
+      'storageLocation': storageLocation?.trim() ?? '',
       'description': description.trim(),
       'imageUrl': imageUrl?.trim() ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
@@ -143,6 +157,72 @@ class ResourceService {
       );
     }
     await _resources.doc(trimmedId).delete();
+  }
+
+  /// Reduces the quantity of a resource. If all total items are deleted, the doc is removed.
+  Future<void> deleteQuantity({
+    required String id,
+    required int quantityToDelete,
+  }) async {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-id',
+        message: 'Resource id is missing.',
+      );
+    }
+    if (quantityToDelete <= 0) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-quantity',
+        message: 'Quantity to delete must be greater than 0.',
+      );
+    }
+
+    await _firestore.runTransaction((transaction) async {
+      final docRef = _resources.doc(trimmedId);
+      final snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'not-found',
+          message: 'Resource not found.',
+        );
+      }
+
+      final data = snapshot.data()!;
+      final totalQuantity = (data['totalQuantity'] as num?)?.toInt() ?? 0;
+      final availableQuantity =
+          (data['availableQuantity'] as num?)?.toInt() ?? totalQuantity;
+      final maxBorrowLimit = (data['maxBorrowLimit'] as num?)?.toInt() ?? 1;
+
+      if (quantityToDelete > availableQuantity) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'insufficient-quantity',
+          message:
+              'Cannot delete $quantityToDelete item(s). Only $availableQuantity available in stock (some may be currently borrowed).',
+        );
+      }
+
+      final newTotal = totalQuantity - quantityToDelete;
+      final newAvailable = availableQuantity - quantityToDelete;
+
+      if (newTotal <= 0) {
+        transaction.delete(docRef);
+      } else {
+        final newMaxBorrow = maxBorrowLimit > newTotal
+            ? newTotal
+            : maxBorrowLimit;
+        transaction.update(docRef, {
+          'totalQuantity': newTotal,
+          'availableQuantity': newAvailable,
+          'maxBorrowLimit': newMaxBorrow,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
   }
 
   Future<ResourceItem?> getResourceById(String id) async {
@@ -178,9 +258,11 @@ class ResourceService {
         case 'invalid-code':
         case 'invalid-category':
         case 'invalid-quantity':
+        case 'insufficient-quantity':
           return error.message ?? 'Please check the resource details.';
         default:
-          return error.message ?? 'Unable to save the resource. Please try again.';
+          return error.message ??
+              'Unable to save the resource. Please try again.';
       }
     }
     return error.toString();
@@ -195,6 +277,7 @@ class ResourceService {
     required int totalQuantity,
     required int availableQuantity,
     required int maxBorrowLimit,
+    required int maxBorrowDays,
   }) {
     if (itemName.isEmpty) {
       throw FirebaseException(
@@ -244,6 +327,13 @@ class ResourceService {
         code: 'invalid-quantity',
         message:
             'Max borrow limit must be greater than 0 and not exceed total quantity.',
+      );
+    }
+    if (maxBorrowDays < 1) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-quantity',
+        message: 'Max borrow duration must be at least 1 day.',
       );
     }
   }

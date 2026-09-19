@@ -63,7 +63,7 @@ class _ResubmitAppealScreenState extends State<ResubmitAppealScreen> {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      Navigator.of(context).pushNamed('/my-requests');
+      Navigator.of(context).pushNamed('/my-borrowings', arguments: 1);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

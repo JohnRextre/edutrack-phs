@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
@@ -352,6 +354,24 @@ class _TransactionResourceImage extends StatelessWidget {
     }
 
     if (trimmedUrl.isEmpty) return fallback();
+
+    if (trimmedUrl.startsWith('data:image')) {
+      try {
+        final base64Data = trimmedUrl.contains(',')
+            ? trimmedUrl.split(',').last
+            : trimmedUrl;
+        final bytes = base64Decode(base64Data);
+        return Image.memory(
+          bytes,
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, exception, stackTrace) => fallback(),
+        );
+      } catch (_) {
+        return fallback();
+      }
+    }
 
     if (trimmedUrl.startsWith('http')) {
       return Image.network(

@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../models/borrow_transaction_model.dart';
 import '../services/borrow_service.dart';
 import '../services/dashboard_service.dart';
+import '../widgets/borrow_status_badge.dart';
+import '../widgets/borrow_transaction_details_modal.dart';
 import '../widgets/return_verification_details.dart';
 import 'custodian/add_edit_resource_screen.dart';
-import 'custodian/borrow_request_details_screen.dart';
 import 'custodian/return_verification_details_screen.dart';
 
 class CustodianDashboardScreen extends StatefulWidget {
@@ -61,7 +62,6 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
         'Total: ${DashboardService.formatCount(metrics.totalResources)} | '
         'Available: ${DashboardService.formatCount(metrics.available)} | '
         'Borrowed: ${DashboardService.formatCount(metrics.borrowed)} | '
-        'Pending: ${DashboardService.formatCount(metrics.pendingRequests)} | '
         'Returns: ${DashboardService.formatCount(metrics.pendingReturns)} | '
         'Overdue: ${DashboardService.formatCount(metrics.overdue)}';
     _showSnackBar('Report summary — $summary');
@@ -195,7 +195,7 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
             if (constraints.maxWidth < 760) {
               return Column(
                 children: [
-                  _RecentBorrowRequests(dashboardService: _dashboardService),
+                  _RecentBorrowedInventory(dashboardService: _dashboardService),
                   const SizedBox(height: 16),
                   _BorrowingInsights(dashboardService: _dashboardService),
                 ],
@@ -206,7 +206,7 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: _RecentBorrowRequests(
+                  child: _RecentBorrowedInventory(
                     dashboardService: _dashboardService,
                   ),
                 ),
@@ -328,13 +328,15 @@ class _SummaryGrid extends StatelessWidget {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 1000 ? 5 : 2;
+            final columns = constraints.maxWidth >= 1000
+                ? 5
+                : (constraints.maxWidth >= 600 ? 3 : 2);
             final isCompact = constraints.maxWidth < 760;
             return GridView.count(
               crossAxisCount: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: columns == 5 ? 1.55 : (isCompact ? 1.1 : 1.65),
+              childAspectRatio: columns == 5 ? 1.4 : (isCompact ? 1.15 : 1.45),
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
@@ -347,25 +349,18 @@ class _SummaryGrid extends StatelessWidget {
                   primary: true,
                 ),
                 _SummaryCard(
-                  'Available',
+                  'Available Stock',
                   loading
                       ? '—'
                       : DashboardService.formatCount(metrics.available),
                   Icons.check_circle_outline,
                 ),
                 _SummaryCard(
-                  'Borrowed',
+                  'Borrowed Inventory',
                   loading
                       ? '—'
                       : DashboardService.formatCount(metrics.borrowed),
                   Icons.book_outlined,
-                ),
-                _SummaryCard(
-                  'Pending Requests',
-                  loading
-                      ? '—'
-                      : DashboardService.formatCount(metrics.pendingRequests),
-                  Icons.pending_actions_outlined,
                 ),
                 _SummaryCard(
                   'Pending Returns',
@@ -375,19 +370,10 @@ class _SummaryGrid extends StatelessWidget {
                   Icons.assignment_return_outlined,
                 ),
                 _SummaryCard(
-                  'Overdue',
+                  'Overdue Items',
                   loading ? '—' : DashboardService.formatCount(metrics.overdue),
                   Icons.warning_amber_outlined,
-                ),
-                _SummaryCard(
-                  'Damaged',
-                  loading ? '—' : DashboardService.formatCount(metrics.damaged),
-                  Icons.broken_image_outlined,
-                ),
-                _SummaryCard(
-                  'Lost',
-                  loading ? '—' : DashboardService.formatCount(metrics.lost),
-                  Icons.search_off_outlined,
+                  accentColor: metrics.overdue > 0 ? Colors.red : null,
                 ),
               ],
             );
@@ -399,16 +385,26 @@ class _SummaryGrid extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard(this.label, this.value, this.icon, {this.primary = false});
+  const _SummaryCard(
+    this.label,
+    this.value,
+    this.icon, {
+    this.primary = false,
+    this.accentColor,
+  });
 
   final String label;
   final String value;
   final IconData icon;
   final bool primary;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final displayIconColor =
+        accentColor ?? (primary ? colors.onPrimary : colors.primary);
+
     return Card(
       color: primary ? colors.primary : colors.surface,
       child: Padding(
@@ -416,12 +412,14 @@ class _SummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: primary ? colors.onPrimary : colors.primary),
+            Icon(icon, color: displayIconColor),
             const SizedBox(height: 12),
             Text(
               value,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: primary ? colors.onPrimary : colors.onSurface,
+                color: primary
+                    ? colors.onPrimary
+                    : (accentColor ?? colors.onSurface),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -484,19 +482,19 @@ class _Panel extends StatelessWidget {
   );
 }
 
-class _RecentBorrowRequests extends StatelessWidget {
-  const _RecentBorrowRequests({required this.dashboardService});
+class _RecentBorrowedInventory extends StatelessWidget {
+  const _RecentBorrowedInventory({required this.dashboardService});
 
   final DashboardService dashboardService;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<BorrowTransaction>>(
-      stream: dashboardService.watchRecentPendingRequests(),
+      stream: dashboardService.watchRecentBorrowedInventory(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _Panel(
-            title: 'Recent Borrow Requests',
+            title: 'Recent Borrowed Items',
             child: _StreamError(message: snapshot.error.toString()),
           );
         }
@@ -504,24 +502,24 @@ class _RecentBorrowRequests extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const _Panel(
-            title: 'Recent Borrow Requests',
+            title: 'Recent Borrowed Items',
             child: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final requests = snapshot.data ?? const [];
+        final items = snapshot.data ?? const [];
         return _Panel(
-          title: 'Recent Borrow Requests',
+          title: 'Recent Borrowed Items',
           actionLabel: 'View All',
           onAction: () =>
               Navigator.pushNamed(context, '/custodian-borrow-requests'),
-          child: requests.isEmpty
-              ? const _EmptyPanelMessage('No pending borrow requests.')
+          child: items.isEmpty
+              ? const _EmptyPanelMessage('No active borrowed items.')
               : Column(
                   children: [
-                    for (var index = 0; index < requests.length; index++) ...[
+                    for (var index = 0; index < items.length; index++) ...[
                       if (index > 0) const Divider(height: 22),
-                      _RequestRow(transaction: requests[index]),
+                      _BorrowedInventoryRow(transaction: items[index]),
                     ],
                   ],
                 ),
@@ -531,20 +529,16 @@ class _RecentBorrowRequests extends StatelessWidget {
   }
 }
 
-class _RequestRow extends StatelessWidget {
-  const _RequestRow({required this.transaction});
+class _BorrowedInventoryRow extends StatelessWidget {
+  const _BorrowedInventoryRow({required this.transaction});
 
   final BorrowTransaction transaction;
 
   @override
   Widget build(BuildContext context) {
-    final section = transaction.userRole == 'teacher' ? 'Teacher' : 'Student';
     return InkWell(
-      onTap: () => BorrowRequestDetailsScreen.open(
-        context,
-        transaction: transaction,
-        borrowerSection: section,
-      ),
+      onTap: () =>
+          BorrowTransactionDetailsModal.show(context, transaction: transaction),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -561,40 +555,38 @@ class _RequestRow extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               flex: 2,
-              child: Text(
-                transaction.userName,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    transaction.userName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    transaction.userRole == 'teacher' ? 'Teacher' : 'Student',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
-            Expanded(flex: 2, child: Text(transaction.resourceName)),
+            Expanded(
+              flex: 2,
+              child: Text(
+                transaction.resourceName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             Expanded(
               child: Text(
                 DashboardService.formatDisplayDate(transaction.borrowDate),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            const _StatusPill('Pending'),
+            BorrowStatusBadge(transaction: transaction, compact: true),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill(this.status);
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(status, style: Theme.of(context).textTheme.labelSmall),
     );
   }
 }

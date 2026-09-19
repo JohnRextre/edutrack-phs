@@ -16,7 +16,9 @@ class ResourceItem {
     required this.availableQuantity,
     required this.maxBorrowLimit,
     required this.description,
+    this.maxBorrowDays = defaultMaxBorrowDays,
     this.imageUrl,
+    this.storageLocation = '',
     this.createdAt,
     this.damagedQuantity = 0,
     this.lostQuantity = 0,
@@ -26,6 +28,9 @@ class ResourceItem {
 
   /// Default per-transaction borrow cap for teachers when not set in Firestore.
   static const int defaultMaxBorrowLimit = 1;
+
+  /// Default maximum days a resource can be borrowed (1 week).
+  static const int defaultMaxBorrowDays = 7;
 
   final String id;
   final String itemName;
@@ -38,8 +43,12 @@ class ResourceItem {
 
   /// Maximum quantity a teacher may request in a single borrow transaction.
   final int maxBorrowLimit;
+
+  /// Maximum duration in days this item can be borrowed.
+  final int maxBorrowDays;
   final String description;
   final String? imageUrl;
+  final String storageLocation;
   final DateTime? createdAt;
   final int damagedQuantity;
   final int lostQuantity;
@@ -55,7 +64,8 @@ class ResourceItem {
 
   bool get isAvailable => availableQuantity > 0;
 
-  IconData get fallbackIcon => ResourceTaxonomy.iconForMainCategory(mainCategory);
+  IconData get fallbackIcon =>
+      ResourceTaxonomy.iconForMainCategory(mainCategory);
 
   Map<String, dynamic> toMap() {
     return {
@@ -67,8 +77,10 @@ class ResourceItem {
       'totalQuantity': totalQuantity,
       'availableQuantity': availableQuantity,
       'maxBorrowLimit': maxBorrowLimit,
+      'maxBorrowDays': maxBorrowDays,
       'description': description,
       'imageUrl': imageUrl ?? '',
+      'storageLocation': storageLocation.trim(),
       if (damagedQuantity > 0) 'damagedQuantity': damagedQuantity,
       if (lostQuantity > 0) 'lostQuantity': lostQuantity,
       if (condition.isNotEmpty) 'condition': condition,
@@ -82,11 +94,17 @@ class ResourceItem {
       map['totalQuantity'] ?? map['quantity'],
       fallback: 1,
     );
-    final availableQuantity =
-        _asInt(map['availableQuantity'], fallback: totalQuantity);
+    final availableQuantity = _asInt(
+      map['availableQuantity'],
+      fallback: totalQuantity,
+    );
     final maxBorrowLimit = _asInt(
       map['maxBorrowLimit'],
       fallback: defaultMaxBorrowLimit,
+    );
+    final maxBorrowDays = _asInt(
+      map['maxBorrowDays'] ?? map['borrowDurationDays'] ?? map['maxDays'],
+      fallback: defaultMaxBorrowDays,
     );
 
     final createdAtValue = map['createdAt'];
@@ -107,8 +125,12 @@ class ResourceItem {
       totalQuantity: totalQuantity,
       availableQuantity: availableQuantity,
       maxBorrowLimit: maxBorrowLimit.clamp(1, totalQuantity),
+      maxBorrowDays: maxBorrowDays < 1 ? defaultMaxBorrowDays : maxBorrowDays,
       description: (map['description'] ?? '').toString(),
       imageUrl: map['imageUrl']?.toString(),
+      storageLocation: (map['storageLocation'] ?? map['location'] ?? '')
+          .toString()
+          .trim(),
       createdAt: createdAt,
       damagedQuantity: _asInt(map['damagedQuantity'], fallback: 0),
       lostQuantity: _asInt(map['lostQuantity'], fallback: 0),
@@ -128,8 +150,10 @@ class ResourceItem {
     int? totalQuantity,
     int? availableQuantity,
     int? maxBorrowLimit,
+    int? maxBorrowDays,
     String? description,
     String? imageUrl,
+    String? storageLocation,
     DateTime? createdAt,
     int? damagedQuantity,
     int? lostQuantity,
@@ -146,8 +170,10 @@ class ResourceItem {
       totalQuantity: totalQuantity ?? this.totalQuantity,
       availableQuantity: availableQuantity ?? this.availableQuantity,
       maxBorrowLimit: maxBorrowLimit ?? this.maxBorrowLimit,
+      maxBorrowDays: maxBorrowDays ?? this.maxBorrowDays,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
+      storageLocation: storageLocation ?? this.storageLocation,
       createdAt: createdAt ?? this.createdAt,
       damagedQuantity: damagedQuantity ?? this.damagedQuantity,
       lostQuantity: lostQuantity ?? this.lostQuantity,
@@ -342,13 +368,15 @@ const String audioVisual = ResourceTaxonomy.audioVisual;
 const String sports = ResourceTaxonomy.sports;
 const String artsDesign = ResourceTaxonomy.artsDesign;
 const String generalInfrastructure = ResourceTaxonomy.generalInfrastructure;
-const String vocationalTechnicalTools = ResourceTaxonomy.vocationalTechnicalTools;
+const String vocationalTechnicalTools =
+    ResourceTaxonomy.vocationalTechnicalTools;
 const String homeEconomics = ResourceTaxonomy.homeEconomics;
 const String industrialArts = ResourceTaxonomy.industrialArts;
 const String agriFisheryArts = ResourceTaxonomy.agriFisheryArts;
 
 // Legacy aliases for borrower screens.
-const String generalLearningResources = ResourceTaxonomy.mainCategoryGeneralLearning;
+const String generalLearningResources =
+    ResourceTaxonomy.mainCategoryGeneralLearning;
 const String ictResources = ResourceTaxonomy.mainCategoryIct;
 const String tvlResources = ResourceTaxonomy.mainCategoryTvl;
 

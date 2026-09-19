@@ -15,7 +15,7 @@ class CustodianSidebar extends StatelessWidget {
     const links = [
       ('Dashboard', Icons.dashboard_outlined),
       ('Learning Resources', Icons.menu_book_outlined),
-      ('Borrow Requests', Icons.pending_actions_outlined),
+      ('Borrowed Inventory', Icons.inventory_outlined),
       ('Return Verification', Icons.assignment_turned_in_outlined),
       ('Reports', Icons.bar_chart_outlined),
     ];

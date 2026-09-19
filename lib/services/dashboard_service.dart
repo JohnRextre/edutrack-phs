@@ -63,9 +63,9 @@ class DashboardService {
     FirebaseFirestore? firestore,
     ResourceService? resourceService,
     BorrowService? borrowService,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _resourceService = resourceService ?? ResourceService(),
-        _borrowService = borrowService ?? BorrowService();
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _resourceService = resourceService ?? ResourceService(),
+       _borrowService = borrowService ?? BorrowService();
 
   final FirebaseFirestore _firestore;
   final ResourceService _resourceService;
@@ -90,20 +90,29 @@ class DashboardService {
   /// Top [limit] pending borrow requests, newest first.
   Stream<List<BorrowTransaction>> watchRecentPendingRequests({int limit = 3}) {
     return _borrowService.getPendingRequests().map(
-          (requests) => requests.take(limit).toList(growable: false),
-        );
+      (requests) => requests.take(limit).toList(growable: false),
+    );
+  }
+
+  /// Top [limit] active borrowed inventory items, newest first.
+  Stream<List<BorrowTransaction>> watchRecentBorrowedInventory({
+    int limit = 5,
+  }) {
+    return _borrowService.watchBorrowedInventory().map(
+      (items) => items.take(limit).toList(growable: false),
+    );
   }
 
   /// Live map of user id → department/section for borrower subtitles.
   Stream<Map<String, String>> watchUserSections() {
-    return _firestore.collection(AuthService.usersCollection).snapshots().map(
-      (snapshot) {
-        return {
-          for (final doc in snapshot.docs)
-            doc.id: (doc.data()['departmentOrSection'] ?? '').toString(),
-        };
-      },
-    );
+    return _firestore.collection(AuthService.usersCollection).snapshots().map((
+      snapshot,
+    ) {
+      return {
+        for (final doc in snapshot.docs)
+          doc.id: (doc.data()['departmentOrSection'] ?? '').toString(),
+      };
+    });
   }
 
   /// Top [limit] return requests awaiting verification, newest first.
@@ -136,14 +145,13 @@ class DashboardService {
   }
 
   Stream<List<BorrowTransaction>> _watchAllTransactions() {
-    return _firestore.collection(BorrowService.collection).snapshots().map(
-      (snapshot) {
-        final items =
-            snapshot.docs.map(BorrowTransaction.fromFirestore).toList();
-        items.sort((a, b) => b.borrowDate.compareTo(a.borrowDate));
-        return items;
-      },
-    );
+    return _firestore.collection(BorrowService.collection).snapshots().map((
+      snapshot,
+    ) {
+      final items = snapshot.docs.map(BorrowTransaction.fromFirestore).toList();
+      items.sort((a, b) => b.borrowDate.compareTo(a.borrowDate));
+      return items;
+    });
   }
 
   DashboardMetrics _computeMetrics(
@@ -237,9 +245,7 @@ class DashboardService {
     List<BorrowTransaction> transactions,
   ) {
     final resourceById = {for (final item in resources) item.id: item};
-    final counts = {
-      for (final label in categoryLabels) label: 0,
-    };
+    final counts = {for (final label in categoryLabels) label: 0};
 
     for (final transaction in transactions) {
       if (!_countsTowardBorrowHistory(transaction.status)) continue;
@@ -309,10 +315,14 @@ class DashboardService {
         status == BorrowTransactionStatus.returnRejected;
   }
 
-  String _categoryBucket(ResourceItem? resource, BorrowTransaction transaction) {
+  String _categoryBucket(
+    ResourceItem? resource,
+    BorrowTransaction transaction,
+  ) {
     if (resource != null) {
-      final mainCategory =
-          ResourceTaxonomy.normalizeMainCategory(resource.mainCategory);
+      final mainCategory = ResourceTaxonomy.normalizeMainCategory(
+        resource.mainCategory,
+      );
       final itemType = resource.itemType.toLowerCase();
       final subCategory = resource.subCategory.toLowerCase();
 
@@ -387,21 +397,15 @@ class DashboardService {
       controller.add(combiner(latestA as A, latestB as B));
     }
 
-    subscriptionA = streamA.listen(
-      (value) {
-        latestA = value;
-        emitIfReady();
-      },
-      onError: controller.addError,
-    );
+    subscriptionA = streamA.listen((value) {
+      latestA = value;
+      emitIfReady();
+    }, onError: controller.addError);
 
-    subscriptionB = streamB.listen(
-      (value) {
-        latestB = value;
-        emitIfReady();
-      },
-      onError: controller.addError,
-    );
+    subscriptionB = streamB.listen((value) {
+      latestB = value;
+      emitIfReady();
+    }, onError: controller.addError);
 
     return controller.stream;
   }
@@ -442,7 +446,9 @@ class DashboardService {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty) return '?';
     if (parts.length == 1) {
-      return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+      return parts.first
+          .substring(0, parts.first.length.clamp(0, 2))
+          .toUpperCase();
     }
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }

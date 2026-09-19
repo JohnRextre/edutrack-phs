@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/account_role.dart';
+import '../services/auth_service.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/borrower_navigation_bar.dart';
 import '../widgets/custodian_sidebar.dart';
@@ -35,18 +36,13 @@ class DashboardScreen extends StatelessWidget {
       ),
       drawer: isBorrower
           ? null
-          : Drawer(
-              child: _sidebarForRole(context, role, mobile: true),
-            ),
+          : Drawer(child: _sidebarForRole(context, role, mobile: true)),
       body: isBorrower
           ? BorrowerDashboardScreen(
               role: role,
               onSignOut: () => _signOut(context),
             )
-          : _ManagementShell(
-              role: role,
-              onSignOut: () => _signOut(context),
-            ),
+          : _ManagementShell(role: role, onSignOut: () => _signOut(context)),
       bottomNavigationBar: isBorrower
           ? const BorrowerNavigationBar(selectedIndex: 0)
           : null,
@@ -62,6 +58,7 @@ class DashboardScreen extends StatelessWidget {
       if (mobile) Navigator.pop(context);
       final route = switch (label) {
         'Learning Resources' => '/custodian-resources',
+        'Borrowed Inventory' => '/custodian-borrow-requests',
         'Borrow Requests' => '/custodian-borrow-requests',
         'Return Verification' => '/custodian-return-verification',
         'Reports' =>
@@ -87,8 +84,28 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  void _signOut(BuildContext context) {
-    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+  Future<void> _signOut(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await AuthService.signOut();
+    if (!context.mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 }
 
@@ -121,6 +138,7 @@ class _ManagementShell extends StatelessWidget {
     void navigate(String label) {
       final route = switch (label) {
         'Learning Resources' => '/custodian-resources',
+        'Borrowed Inventory' => '/custodian-borrow-requests',
         'Borrow Requests' => '/custodian-borrow-requests',
         'Return Verification' => '/custodian-return-verification',
         'Reports' =>

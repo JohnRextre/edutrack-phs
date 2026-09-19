@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -764,6 +766,42 @@ class _ResourceImage extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
       );
+    }
+
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        final base64Data = imageUrl.contains(',')
+            ? imageUrl.split(',').last
+            : imageUrl;
+        final bytes = base64Decode(base64Data);
+        return Image.memory(
+          bytes,
+          height: height,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, exception, stackTrace) => Container(
+            height: height,
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            alignment: Alignment.center,
+            child: Icon(
+              resource.fallbackIcon,
+              size: 64,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
+          ),
+        );
+      } catch (_) {
+        return Container(
+          height: height,
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          alignment: Alignment.center,
+          child: Icon(
+            resource.fallbackIcon,
+            size: 64,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
+        );
+      }
     }
 
     if (imageUrl.startsWith('http')) {

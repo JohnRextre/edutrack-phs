@@ -9,7 +9,6 @@ class BorrowerNavigationBar extends StatelessWidget {
     '/dashboard',
     '/resources',
     '/my-borrowings',
-    '/my-requests',
     '/profile',
   ];
 
@@ -43,14 +42,9 @@ class BorrowerNavigationBar extends StatelessWidget {
           label: 'Resources',
         ),
         NavigationDestination(
-          icon: Icon(Icons.bookmark_outline),
-          selectedIcon: Icon(Icons.bookmark),
+          icon: Icon(Icons.inventory_2_outlined),
+          selectedIcon: Icon(Icons.inventory_2),
           label: 'My Borrowings',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.assignment_outlined),
-          selectedIcon: Icon(Icons.assignment),
-          label: 'My Requests',
         ),
         NavigationDestination(
           icon: Icon(Icons.person_outline),

@@ -124,7 +124,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
       DateTime(date.year, date.month, date.day);
 
   DateTime get _maxReturnDate =>
-      _dateOnly(_borrowDate).add(const Duration(days: 7));
+      _dateOnly(_borrowDate).add(Duration(days: resource.maxBorrowDays));
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
@@ -164,10 +164,11 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
     final selected = await showDatePicker(
       context: context,
       initialDate:
-          _expectedReturnDate ?? borrowDay.add(const Duration(days: 7)),
+          _expectedReturnDate ??
+          borrowDay.add(Duration(days: resource.maxBorrowDays)),
       firstDate: borrowDay,
       lastDate: _maxReturnDate,
-      helpText: 'Select return date',
+      helpText: 'Select return date (Max ${resource.maxBorrowDays} days)',
     );
     if (selected == null || !mounted) return;
 
@@ -182,7 +183,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
       return 'Return date cannot be before the borrow date.';
     }
     if (returnDay.isAfter(_maxReturnDate)) {
-      return 'Maximum borrow duration is 1 week (7 days).';
+      return 'Maximum borrow duration for this item is ${resource.maxBorrowDays} day(s).';
     }
     return null;
   }
@@ -243,9 +244,9 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
       );
 
       if (!mounted) return;
-      _showSnackBar('Borrow request submitted successfully.');
+      _showSnackBar('Resource borrowed successfully.');
       Navigator.of(context).pop();
-      Navigator.of(context).pushNamed('/my-requests');
+      Navigator.of(context).pushNamed('/my-borrowings');
     } catch (error) {
       if (mounted) {
         _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
@@ -460,6 +461,16 @@ class _ResourceOverviewCard extends StatelessWidget {
                       label: resource.subCategory,
                       icon: Icons.folder_outlined,
                     ),
+                    _InfoChip(
+                      label:
+                          'Max ${resource.maxBorrowDays} day${resource.maxBorrowDays > 1 ? 's' : ''}',
+                      icon: Icons.schedule_outlined,
+                    ),
+                    if (resource.storageLocation.isNotEmpty)
+                      _InfoChip(
+                        label: resource.storageLocation,
+                        icon: Icons.location_on_outlined,
+                      ),
                     if (resource.itemType.isNotEmpty)
                       _InfoChip(
                         label: resource.itemType,

@@ -89,45 +89,6 @@ class BorrowService {
       }
     }
 
-    final resourceSnap = await _resourceRef(resourceId.trim()).get();
-    if (!resourceSnap.exists) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'resource-not-found',
-        message: 'The resource no longer exists.',
-      );
-    }
-
-    final resourceData = resourceSnap.data()!;
-    final available = _asInt(resourceData['availableQuantity'], fallback: 0);
-    final maxBorrowLimit = _asInt(
-      resourceData['maxBorrowLimit'],
-      fallback: ResourceItem.defaultMaxBorrowLimit,
-    );
-
-    if (quantity < 1) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-quantity',
-        message: 'Requested quantity must be at least 1.',
-      );
-    }
-    if (quantity > maxBorrowLimit) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'exceeds-max-limit',
-        message:
-            'Exceeds the maximum limit set by the Property Custodian (Max: $maxBorrowLimit)',
-      );
-    }
-    if (quantity > available) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'out-of-stock',
-        message: 'Only $available item${available == 1 ? '' : 's'} available.',
-      );
-    }
-
     _validateBorrowRequest(
       resourceId: resourceId,
       userId: userId,
@@ -137,24 +98,77 @@ class BorrowService {
       expectedReturnDate: expectedReturnDate,
     );
 
-    final docRef = await _transactions.add({
-      'resourceId': resourceId.trim(),
-      'resourceName': resourceName.trim(),
-      'resourceCode': resourceCode.trim(),
-      'userId': userId.trim(),
-      'userName': userName.trim(),
-      'userRole': role,
-      'requestedQuantity': quantity,
-      'borrowDate': Timestamp.fromDate(_dateOnly(borrowDate)),
-      'expectedReturnDate': Timestamp.fromDate(_dateOnly(expectedReturnDate)),
-      'actualReturnDate': null,
-      'returnSubmittedDate': null,
-      'purpose': purpose?.trim() ?? '',
-      'status': BorrowTransactionStatus.pending,
-      'createdAt': FieldValue.serverTimestamp(),
+    final resRef = _resourceRef(resourceId.trim());
+    final transRef = _transactions.doc();
+
+    await _firestore.runTransaction((transaction) async {
+      final resourceSnap = await transaction.get(resRef);
+      if (!resourceSnap.exists) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'resource-not-found',
+          message: 'The resource no longer exists.',
+        );
+      }
+
+      final resourceData = resourceSnap.data()!;
+      final available = _asInt(resourceData['availableQuantity'], fallback: 0);
+      final maxBorrowLimit = _asInt(
+        resourceData['maxBorrowLimit'],
+        fallback: ResourceItem.defaultMaxBorrowLimit,
+      );
+
+      if (quantity < 1) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'invalid-quantity',
+          message: 'Requested quantity must be at least 1.',
+        );
+      }
+      if (quantity > maxBorrowLimit) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'exceeds-max-limit',
+          message:
+              'Exceeds the maximum limit set by the Property Custodian (Max: $maxBorrowLimit)',
+        );
+      }
+      if (quantity > available) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'out-of-stock',
+          message:
+              'Only $available item${available == 1 ? '' : 's'} available in stock.',
+        );
+      }
+
+      // Deduct available stock immediately
+      final newAvailable = available - quantity;
+      transaction.update(resRef, {
+        'availableQuantity': newAvailable,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Create transaction directly as borrowed
+      transaction.set(transRef, {
+        'resourceId': resourceId.trim(),
+        'resourceName': resourceName.trim(),
+        'resourceCode': resourceCode.trim(),
+        'userId': userId.trim(),
+        'userName': userName.trim(),
+        'userRole': role,
+        'requestedQuantity': quantity,
+        'borrowDate': Timestamp.fromDate(_dateOnly(borrowDate)),
+        'expectedReturnDate': Timestamp.fromDate(_dateOnly(expectedReturnDate)),
+        'actualReturnDate': null,
+        'returnSubmittedDate': null,
+        'purpose': purpose?.trim() ?? '',
+        'status': BorrowTransactionStatus.borrowed,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     });
 
-    return docRef.id;
+    return transRef.id;
   }
 
   /// Whether a pending borrow request can no longer be approved.
@@ -861,7 +875,22 @@ class BorrowService {
         transaction.borrowDate;
   }
 
-  /// Pending requests for custodian approval.
+  /// All active borrowed items for Custodian's Borrowed Inventory screen.
+  Stream<List<BorrowTransaction>> watchBorrowedInventory() {
+    return _transactions
+        .where(
+          'status',
+          whereIn: [
+            BorrowTransactionStatus.borrowed,
+            BorrowTransactionStatus.returnPending,
+            BorrowTransactionStatus.returnRejected,
+          ],
+        )
+        .snapshots()
+        .map(_mapAndSortTransactions);
+  }
+
+  /// Pending requests for custodian approval (legacy/fallback support).
   Stream<List<BorrowTransaction>> getPendingRequests() {
     return _transactions
         .where('status', isEqualTo: BorrowTransactionStatus.pending)

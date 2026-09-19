@@ -14,7 +14,6 @@ import 'screens/login_screen.dart';
 import 'screens/homepage_screen.dart';
 import 'screens/initial_admin_setup_screen.dart';
 import 'screens/my_borrowings_screen.dart';
-import 'screens/my_requests_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/resources_screen.dart';
@@ -56,11 +55,15 @@ class MyApp extends StatelessWidget {
         },
         '/resources': (context) => const ResourcesScreen(),
         '/return': (context) => const MyBorrowingsScreen(),
-        '/my-borrowings': (context) => const MyBorrowingsScreen(),
+        '/my-borrowings': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final initialTab = args is int ? args : 0;
+          return MyBorrowingsScreen(initialTabIndex: initialTab);
+        },
         '/my-requests': (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           final initialTab = args is int ? args : 0;
-          return MyRequestsScreen(initialTabIndex: initialTab);
+          return MyBorrowingsScreen(initialTabIndex: initialTab);
         },
         '/activity': (context) => const AccountActivitiesScreen(),
         '/profile': (context) => const ProfileScreen(),
