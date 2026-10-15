@@ -91,6 +91,15 @@ class QrService {
         return code.isEmpty ? null : code;
       }
     }
+
+    // Fallback: If payload is just the direct item code (e.g., "LAP-001")
+    final trimmed = payload.trim();
+    if (trimmed.isNotEmpty &&
+        !trimmed.contains('\n') &&
+        !trimmed.toLowerCase().startsWith('system:')) {
+      return trimmed;
+    }
+
     return null;
   }
 

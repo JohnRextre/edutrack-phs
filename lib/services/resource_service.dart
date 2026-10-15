@@ -234,6 +234,20 @@ class ResourceService {
     return ResourceItem.fromMap(doc.id, doc.data()!);
   }
 
+  Future<ResourceItem?> getResourceByItemCode(String itemCode) async {
+    final trimmed = itemCode.trim();
+    if (trimmed.isEmpty) return null;
+
+    final snapshot = await _resources
+        .where('itemCode', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+    if (snapshot.docs.isEmpty) return null;
+
+    final doc = snapshot.docs.first;
+    return ResourceItem.fromMap(doc.id, doc.data());
+  }
+
   Future<bool> itemCodeExists(String itemCode, {String? excludeId}) async {
     final normalized = itemCode.trim().toLowerCase();
     if (normalized.isEmpty) return false;

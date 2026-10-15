@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../models/resource_item.dart';
 import '../../services/qr_service.dart';
@@ -194,6 +195,15 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
           ),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () => _shareQrCode(
+              resource: resource,
+              payload: qrPayload,
+              imageUrl: result.imageUrl!,
+            ),
+            icon: const Icon(Icons.ios_share),
+            label: const Text('Share / Save QR Code'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Close'),
@@ -201,6 +211,27 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _shareQrCode({
+    required ResourceItem resource,
+    required String payload,
+    required String imageUrl,
+  }) async {
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          subject: 'EduTrack QR Code - ${resource.itemCode}',
+          text:
+              'EduTrack PHS QR code for ${resource.itemName} '
+              '(${resource.itemCode}).\n\n'
+              'QR image: $imageUrl\n\n'
+              'QR payload:\n$payload',
+        ),
+      );
+    } catch (error) {
+      _showSnackBar('Unable to share QR code: $error', isError: true);
+    }
   }
 
   void _confirmDelete(ResourceItem resource) {

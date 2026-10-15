@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../models/borrow_transaction_model.dart';
+import '../../models/resource_item.dart';
 import '../../services/borrow_service.dart';
 import '../../services/dashboard_service.dart';
+import '../../services/resource_service.dart';
 import '../../widgets/borrow_status_badge.dart';
 import '../../widgets/proof_image_attachment_field.dart';
 import '../../widgets/return_verification_details.dart';
@@ -103,6 +107,7 @@ class _ReturnVerificationDetailsScreenState
     }
   }
 
+  @override
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -234,10 +239,26 @@ class _ReturnVerificationDetailsScreenState
   }
 }
 
-class _ItemOverviewHeaderCard extends StatelessWidget {
+class _ItemOverviewHeaderCard extends StatefulWidget {
   const _ItemOverviewHeaderCard({required this.transaction});
 
   final BorrowTransaction transaction;
+
+  @override
+  State<_ItemOverviewHeaderCard> createState() =>
+      _ItemOverviewHeaderCardState();
+}
+
+class _ItemOverviewHeaderCardState extends State<_ItemOverviewHeaderCard> {
+  late final Future<ResourceItem?> _resourceFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _resourceFuture = ResourceService().getResourceById(
+      widget.transaction.resourceId,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -249,39 +270,103 @@ class _ItemOverviewHeaderCard extends StatelessWidget {
       color: colorScheme.primaryContainer.withValues(alpha: 0.35),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              transaction.resourceName,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              transaction.resourceCode,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontFamily: 'monospace',
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
+        child: FutureBuilder<ResourceItem?>(
+          future: _resourceFuture,
+          builder: (context, snapshot) {
+            final resourceImage = snapshot.data?.imageUrl?.trim() ?? '';
+            final proofImage =
+                widget.transaction.returnProofImage?.trim() ?? '';
+            final image = proofImage.isNotEmpty ? proofImage : resourceImage;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (image.isNotEmpty) ...[
+                  SizedBox(height: 150, child: _HeaderImage(image: image)),
+                  const SizedBox(height: 12),
+                ],
                 Text(
-                  'Status',
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  widget.transaction.resourceName,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.transaction.resourceCode,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const Spacer(),
-                BorrowStatusBadge(transaction: transaction, compact: true),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      'Status',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    BorrowStatusBadge(
+                      transaction: widget.transaction,
+                      compact: true,
+                    ),
+                  ],
+                ),
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+class _HeaderImage extends StatelessWidget {
+  const _HeaderImage({required this.image});
+
+  final String image;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Container(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      alignment: Alignment.center,
+      child: const Icon(Icons.image_not_supported_outlined, size: 42),
+    );
+
+    if (image.startsWith('data:image')) {
+      try {
+        final bytes = base64Decode(
+          image.contains(',') ? image.split(',').last : image,
+        );
+        return Image.memory(
+          bytes,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => fallback,
+        );
+      } on FormatException {
+        return fallback;
+      }
+    }
+
+    if (image.startsWith('http://') || image.startsWith('https://')) {
+      return Image.network(
+        image,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      );
+    }
+
+    return Image.asset(
+      image,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => fallback,
     );
   }
 }
@@ -434,7 +519,7 @@ class _RejectReturnDialogState extends State<_RejectReturnDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _selectedRequiredReturnType,
+                initialValue: _selectedRequiredReturnType,
                 decoration: const InputDecoration(
                   labelText: 'Returned Type Item Should be *',
                   border: OutlineInputBorder(),

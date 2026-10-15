@@ -4,6 +4,8 @@ import '../models/borrow_transaction_model.dart';
 import '../services/borrow_service.dart';
 import '../services/qr_service.dart';
 import '../widgets/borrow_status_badge.dart';
+import '../widgets/qr_camera_scanner_screen.dart';
+import '../widgets/qr_return_response_modal.dart';
 import '../widgets/return_verification_details.dart';
 import 'custodian/return_verification_details_screen.dart';
 
@@ -20,12 +22,10 @@ class _CustodianReturnVerificationScreenState
     extends State<CustodianReturnVerificationScreen> {
   final BorrowService _borrowService = BorrowService();
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _qrPayloadController = TextEditingController();
 
   @override
   void dispose() {
     _searchController.dispose();
-    _qrPayloadController.dispose();
     super.dispose();
   }
 
@@ -59,23 +59,10 @@ class _CustodianReturnVerificationScreenState
     });
   }
 
-  void _verifyReturn(BorrowTransaction transaction) {
-    _openReturnDetails(transaction);
-  }
-
-  Future<void> _lookupByQrPayload() async {
-    final payload = _qrPayloadController.text.trim();
-    if (payload.isEmpty) {
-      _showSnackBar('Paste or enter the scanned QR payload.', isError: true);
-      return;
-    }
-
+  Future<void> _lookupByQrPayload(String payload) async {
     final itemCode = QrService.parseItemCodeFromPayload(payload);
     if (itemCode == null) {
-      _showSnackBar(
-        'Could not find an Item Code in the QR payload.',
-        isError: true,
-      );
+      _showSnackBar('Invalid EduTrack QR code.', isError: true);
       return;
     }
 
@@ -93,13 +80,17 @@ class _CustodianReturnVerificationScreenState
 
       if (transaction == null) {
         _showSnackBar(
-          'No pending return request found for code "$itemCode".',
+          "No pending return request found for item code '$itemCode'.",
           isError: true,
         );
         return;
       }
 
-      _verifyReturn(transaction);
+      await showQrReturnResponseModal(
+        context: context,
+        transaction: transaction,
+        onReview: _openReturnDetails,
+      );
     } catch (error) {
       if (mounted) {
         Navigator.pop(context);
@@ -111,49 +102,13 @@ class _CustodianReturnVerificationScreenState
     }
   }
 
-  void _openQrLookupDialog() {
-    _qrPayloadController.clear();
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('QR Code Lookup'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Paste the scanned QR payload below. The item code will be '
-              'extracted automatically.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _qrPayloadController,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                labelText: 'QR Payload',
-                hintText:
-                    'System: EduTrack PHS\nItem Name: ...\nItem Code: ...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _lookupByQrPayload();
-            },
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('Look Up'),
-          ),
-        ],
-      ),
+  Future<void> _openQrLookupDialog() async {
+    final payload = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const QrCameraScannerScreen()),
     );
+    if (!mounted || payload == null) return;
+    await _lookupByQrPayload(payload);
   }
 
   List<BorrowTransaction> _filterTransactions(
@@ -209,7 +164,7 @@ class _CustodianReturnVerificationScreenState
             child: OutlinedButton.icon(
               onPressed: _openQrLookupDialog,
               icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Verify via QR Payload'),
+              label: const Text('Verify via QR Camera'),
             ),
           ),
           const SizedBox(height: 8),

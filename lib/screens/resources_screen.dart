@@ -9,8 +9,11 @@ import '../models/borrow_transaction_model.dart';
 import '../models/resource_item.dart';
 import '../services/auth_service.dart';
 import '../services/borrow_service.dart';
+import '../services/qr_service.dart';
 import '../services/resource_service.dart';
 import '../widgets/borrower_navigation_bar.dart';
+import '../widgets/qr_camera_scanner_screen.dart';
+import '../widgets/qr_borrow_response_modal.dart';
 import 'student/borrow_request_screen.dart';
 
 class ResourcesScreen extends StatefulWidget {
@@ -324,12 +327,63 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     _openBorrowRequest(resource);
   }
 
+  Future<void> _startQrBorrowScan() async {
+    final payload = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrCameraScannerScreen()),
+    );
+    if (!mounted || payload == null) return;
+
+    final itemCode = QrService.parseItemCodeFromPayload(payload);
+    if (itemCode == null) {
+      _showSnackBar('Invalid EduTrack QR code.', isError: true);
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final resource = await _resourceService.getResourceByItemCode(itemCode);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (resource == null) {
+        _showSnackBar("No item found for code '$itemCode'.", isError: true);
+        return;
+      }
+      await showQrBorrowResponseModal(
+        context: context,
+        resource: resource,
+        onProceed: _openBorrowRequest,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showSnackBar(
+        'Unable to look up this item. ${ResourceService.friendlyErrorMessage(error)}',
+        isError: true,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Browse Resources')),
+      appBar: AppBar(
+        title: const Text('Browse Resources'),
+        actions: [
+          IconButton(
+            tooltip: 'Scan QR to borrow',
+            onPressed: _startQrBorrowScan,
+            icon: const Icon(Icons.qr_code_scanner),
+          ),
+        ],
+      ),
       body: userId == null
           ? const Center(child: Text('Please sign in to browse resources.'))
           : StreamBuilder<List<BorrowTransaction>>(
@@ -398,6 +452,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                 onPressed: _openFilterModal,
                                 icon: const Icon(Icons.tune),
                               ),
+                            ),
+                            IconButton(
+                              tooltip: 'Scan QR to borrow',
+                              onPressed: _startQrBorrowScan,
+                              icon: const Icon(Icons.qr_code_scanner),
                             ),
                           ],
                         ),

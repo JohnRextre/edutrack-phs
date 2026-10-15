@@ -947,6 +947,29 @@ class BorrowService {
     return BorrowTransaction.fromFirestore(snapshot.docs.first);
   }
 
+  Future<BorrowTransaction?> findActiveBorrowingByUserAndCode({
+    required String userId,
+    required String itemCode,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final trimmedCode = itemCode.trim();
+    if (trimmedUserId.isEmpty || trimmedCode.isEmpty) return null;
+
+    final snapshot = await _transactions
+        .where('userId', isEqualTo: trimmedUserId)
+        .where('resourceCode', isEqualTo: trimmedCode)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final transaction = BorrowTransaction.fromFirestore(doc);
+      if (transaction.status == BorrowTransactionStatus.borrowed ||
+          transaction.effectiveStatus == BorrowTransactionStatus.overdue) {
+        return transaction;
+      }
+    }
+    return null;
+  }
+
   /// Whether the user already has an active student borrow for this resource.
   Future<bool> hasActiveStudentBorrowForResource({
     required String userId,
