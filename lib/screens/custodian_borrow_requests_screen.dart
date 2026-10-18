@@ -23,6 +23,8 @@ class _CustodianBorrowRequestsScreenState
 
   String _selectedFilter =
       'All'; // 'All', 'Students', 'Teachers', 'Overdue', 'Pending Return'
+  _BorrowedInventorySort _selectedSort = _BorrowedInventorySort.newest;
+  int _selectedShowLimit = 10;
 
   @override
   void dispose() {
@@ -58,15 +60,69 @@ class _CustodianBorrowRequestsScreenState
         final matchesUser = tx.userName.toLowerCase().contains(query);
         final matchesRole = tx.userRole.toLowerCase().contains(query);
         final matchesPurpose = tx.purpose.toLowerCase().contains(query);
+        final matchesSection = tx.sectionName.toLowerCase().contains(query);
         return matchesName ||
             matchesCode ||
             matchesUser ||
             matchesRole ||
-            matchesPurpose;
+            matchesPurpose ||
+            matchesSection;
       }
 
       return true;
     }).toList();
+  }
+
+  List<BorrowTransaction> _sortTransactions(
+    List<BorrowTransaction> transactions,
+  ) {
+    final sorted = List<BorrowTransaction>.from(transactions);
+    sorted.sort((a, b) {
+      switch (_selectedSort) {
+        case _BorrowedInventorySort.section:
+          return _sectionLabel(
+            a,
+          ).toLowerCase().compareTo(_sectionLabel(b).toLowerCase());
+        case _BorrowedInventorySort.item:
+          return a.resourceName.toLowerCase().compareTo(
+            b.resourceName.toLowerCase(),
+          );
+        case _BorrowedInventorySort.dueSoon:
+          return a.expectedReturnDate.compareTo(b.expectedReturnDate);
+        case _BorrowedInventorySort.quantity:
+          return b.requestedQuantity.compareTo(a.requestedQuantity);
+        case _BorrowedInventorySort.newest:
+          return b.borrowDate.compareTo(a.borrowDate);
+      }
+    });
+    return sorted;
+  }
+
+  String _sectionLabel(BorrowTransaction transaction) {
+    final section = transaction.sectionName.trim();
+    return section.isEmpty ? 'No section assigned' : section;
+  }
+
+  String _sortLabel(_BorrowedInventorySort sort) {
+    switch (sort) {
+      case _BorrowedInventorySort.section:
+        return 'Section (A-Z)';
+      case _BorrowedInventorySort.item:
+        return 'Item (A-Z)';
+      case _BorrowedInventorySort.dueSoon:
+        return 'Due date (soonest)';
+      case _BorrowedInventorySort.quantity:
+        return 'Quantity (highest)';
+      case _BorrowedInventorySort.newest:
+        return 'Newest borrowed';
+    }
+  }
+
+  List<BorrowTransaction> _limitTransactions(
+    List<BorrowTransaction> transactions,
+  ) {
+    if (_selectedShowLimit == 0) return transactions;
+    return transactions.take(_selectedShowLimit).toList();
   }
 
   void _showTransactionDetails(BorrowTransaction transaction) {
@@ -122,6 +178,12 @@ class _CustodianBorrowRequestsScreenState
                 label: 'Borrower',
                 value:
                     '${transaction.userName} (${transaction.userRole == 'teacher' ? 'Teacher' : 'Student'})',
+              ),
+              const SizedBox(height: 10),
+              _DetailRow(
+                icon: Icons.groups_outlined,
+                label: 'Section',
+                value: _sectionLabel(transaction),
               ),
               const SizedBox(height: 10),
               _DetailRow(
@@ -217,7 +279,34 @@ class _CustodianBorrowRequestsScreenState
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Borrowed Inventory')),
+      appBar: AppBar(
+        title: const Text('Borrowed Inventory'),
+        actions: [
+          PopupMenuButton<_BorrowedInventorySort>(
+            tooltip: 'Sort borrowed inventory',
+            icon: const Icon(Icons.sort),
+            initialValue: _selectedSort,
+            onSelected: (value) => setState(() => _selectedSort = value),
+            itemBuilder: (context) => _BorrowedInventorySort.values
+                .map(
+                  (sort) => PopupMenuItem(
+                    value: sort,
+                    child: Row(
+                      children: [
+                        if (_selectedSort == sort)
+                          const Icon(Icons.check, size: 18)
+                        else
+                          const SizedBox(width: 18),
+                        const SizedBox(width: 8),
+                        Text(_sortLabel(sort)),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
       body: StreamBuilder<List<BorrowTransaction>>(
         stream: _borrowService.watchBorrowedInventory(),
         builder: (context, snapshot) {
@@ -240,7 +329,10 @@ class _CustodianBorrowRequestsScreenState
           }
 
           final allBorrowed = snapshot.data ?? const [];
-          final filtered = _filterTransactions(allBorrowed);
+          final matchingTransactions = _sortTransactions(
+            _filterTransactions(allBorrowed),
+          );
+          final filtered = _limitTransactions(matchingTransactions);
 
           final totalItems = allBorrowed.length;
           final totalUnits = allBorrowed.fold<int>(
@@ -348,6 +440,66 @@ class _CustodianBorrowRequestsScreenState
               ),
               const SizedBox(height: 8),
 
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Showing ${filtered.length} of ${matchingTransactions.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Show:',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: _selectedShowLimit,
+                            isDense: true,
+                            icon: const Icon(Icons.expand_more, size: 18),
+                            items: const [
+                              DropdownMenuItem<int>(
+                                value: 10,
+                                child: Text('10'),
+                              ),
+                              DropdownMenuItem<int>(
+                                value: 25,
+                                child: Text('25'),
+                              ),
+                              DropdownMenuItem<int>(
+                                value: 75,
+                                child: Text('75'),
+                              ),
+                              DropdownMenuItem<int>(
+                                value: 0,
+                                child: Text('All'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _selectedShowLimit = value);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
               // List of Borrowed Items
               Expanded(
                 child: filtered.isEmpty
@@ -392,6 +544,7 @@ class _CustodianBorrowRequestsScreenState
                             child: _BorrowedInventoryCard(
                               transaction: tx,
                               isOverdue: isOverdue,
+                              sectionLabel: _sectionLabel(tx),
                               onTap: () => _showTransactionDetails(tx),
                             ),
                           );
@@ -452,15 +605,19 @@ class _StatChip extends StatelessWidget {
   }
 }
 
+enum _BorrowedInventorySort { newest, section, item, dueSoon, quantity }
+
 class _BorrowedInventoryCard extends StatelessWidget {
   const _BorrowedInventoryCard({
     required this.transaction,
     required this.isOverdue,
+    required this.sectionLabel,
     required this.onTap,
   });
 
   final BorrowTransaction transaction;
   final bool isOverdue;
+  final String sectionLabel;
   final VoidCallback onTap;
 
   @override
@@ -508,6 +665,29 @@ class _BorrowedInventoryCard extends StatelessWidget {
                           'Code: ${transaction.resourceCode} • Qty: ${transaction.requestedQuantity}',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.groups_outlined,
+                              size: 14,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Section: $sectionLabel',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

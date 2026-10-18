@@ -66,6 +66,7 @@ class DashboardScreen extends StatelessWidget {
               ? '/custodian-reports'
               : '/custodian-reports',
         'User Management' => '/admin-users',
+        'Sections' => '/admin-sections',
         'System Logs' => '/admin-logs',
         'My Account' => '/profile',
         _ => null,
@@ -147,6 +148,7 @@ class _ManagementShell extends StatelessWidget {
               ? '/custodian-reports'
               : '/custodian-reports',
         'User Management' => '/admin-users',
+        'Sections' => '/admin-sections',
         'System Logs' => '/admin-logs',
         'My Account' => '/profile',
         _ => null,

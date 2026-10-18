@@ -10,8 +10,10 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
+import '../models/section_model.dart';
 import '../widgets/borrower_navigation_bar.dart';
 import 'account_activities_screen.dart';
+import 'teacher_sections_screen.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -77,6 +79,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             data: data,
             authUser: user,
             onEditProfile: () => _showEditProfile(context, user, data),
+            onManageTeacherSections: role.toLowerCase() == 'teacher'
+                ? () => _showTeacherSections(context, user.uid, data)
+                : null,
           ),
           bottomNavigationBar: isBorrower
               ? const BorrowerNavigationBar(selectedIndex: 3)
@@ -84,6 +89,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showTeacherSections(
+    BuildContext context,
+    String uid,
+    Map<String, dynamic> data,
+  ) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => TeacherSectionsScreen(
+          teacherId: uid,
+          teacherName: [
+            _value(data['firstName']),
+            _value(data['lastName']),
+          ].where((value) => value.isNotEmpty).join(' '),
+          initialSectionIds: (data['assignedSectionIds'] is Iterable)
+              ? (data['assignedSectionIds'] as Iterable)
+                    .map((value) => value.toString())
+                    .toSet()
+              : <String>{},
+          removalNotices: data['sectionRemovalNotices'] is Iterable
+              ? (data['sectionRemovalNotices'] as Iterable)
+                    .whereType<Map>()
+                    .map((notice) => Map<String, dynamic>.from(notice))
+                    .toList()
+              : const [],
+          sectionStatusNotices: data['sectionStatusNotices'] is Iterable
+              ? (data['sectionStatusNotices'] as Iterable)
+                    .whereType<Map>()
+                    .map((notice) => Map<String, dynamic>.from(notice))
+                    .toList()
+              : const [],
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sections Handled updated successfully')),
+      );
+    }
   }
 
   Future<void> _showEditProfile(
@@ -119,11 +164,13 @@ class _ProfileContent extends StatelessWidget {
     required this.data,
     required this.authUser,
     required this.onEditProfile,
+    this.onManageTeacherSections,
   });
 
   final Map<String, dynamic> data;
   final User authUser;
   final VoidCallback onEditProfile;
+  final VoidCallback? onManageTeacherSections;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +192,7 @@ class _ProfileContent extends StatelessWidget {
     final isBorrower =
         role.toLowerCase() == 'student' || role.toLowerCase() == 'teacher';
     final sectionOrDepartment = isStudent
-        ? _firstValue(data, ['gradeSection', 'section'])
+        ? _firstValue(data, ['sectionName', 'gradeSection', 'section'])
         : _firstValue(data, ['department', 'departmentOrSection']);
     final identifier = _firstValue(data, ['schoolId', 'idNumber']);
     final email = _firstValue(data, ['email']);
@@ -238,7 +285,35 @@ class _ProfileContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-
+        if (isBorrower &&
+            ((isStudent && _firstValue(data, ['sectionId']).isEmpty) ||
+                (!isStudent &&
+                    (data['assignedSectionIds'] is! Iterable ||
+                        (data['assignedSectionIds'] as Iterable)
+                            .isEmpty)))) ...[
+          Card(
+            color: colors.errorContainer,
+            child: ListTile(
+              leading: Icon(Icons.warning_amber_outlined, color: colors.error),
+              title: const Text('Section assignment needed'),
+              subtitle: Text(
+                isStudent
+                    ? 'Open Edit Profile and select your section before borrowing.'
+                    : 'Open Sections Handled and select at least one section before borrowing.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: isStudent ? onEditProfile : onManageTeacherSections,
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (isStudent && _firstValue(data, ['sectionId']).isNotEmpty) ...[
+          _StudentSectionStatusBanner(
+            sectionId: _firstValue(data, ['sectionId']),
+            onChangeSection: onEditProfile,
+          ),
+          const SizedBox(height: 16),
+        ],
         // Personal Details Card
         Card(
           shape: RoundedRectangleBorder(
@@ -292,6 +367,18 @@ class _ProfileContent extends StatelessWidget {
           ),
           child: Column(
             children: [
+              if (role.toLowerCase() == 'teacher') ...[
+                ListTile(
+                  leading: Icon(Icons.groups_outlined, color: colors.primary),
+                  title: const Text('Sections Handled'),
+                  subtitle: const Text(
+                    'Select the sections you currently handle',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onManageTeacherSections,
+                ),
+                const Divider(height: 1),
+              ],
               if (isBorrower) ...[
                 ListTile(
                   leading: Icon(Icons.history, color: colors.primary),
@@ -2156,6 +2243,162 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   }
 }
 
+class _TeacherSectionsSheet extends StatefulWidget {
+  const _TeacherSectionsSheet({
+    required this.uid,
+    required this.initialSectionIds,
+    required this.userService,
+  });
+
+  final String uid;
+  final Set<String> initialSectionIds;
+  final UserService userService;
+
+  @override
+  State<_TeacherSectionsSheet> createState() => _TeacherSectionsSheetState();
+}
+
+class _TeacherSectionsSheetState extends State<_TeacherSectionsSheet> {
+  final _selectedSectionIds = <String>{};
+  List<SectionModel> _sections = const [];
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedSectionIds.addAll(widget.initialSectionIds);
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('sections')
+        .where('isActive', isEqualTo: true)
+        .get();
+    if (!mounted) return;
+    setState(() {
+      _sections = snapshot.docs.map(SectionModel.fromFirestore).toList()
+        ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    });
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    try {
+      await widget.userService.updateUserProfile(widget.uid, {
+        'assignedSectionIds': _selectedSectionIds.toList(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AuthService.friendlyErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.onSurfaceVariant.withValues(alpha: .45),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                'Sections Handled',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Select up to 5 sections that you currently handle.',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              if (_sections.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'No active sections are available yet. Ask the administrator to create or activate a section.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              else
+                ..._sections.map(
+                  (section) => CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(section.displayName),
+                    value: _selectedSectionIds.contains(section.id),
+                    onChanged: _isSaving
+                        ? null
+                        : (checked) {
+                            if (checked == true &&
+                                _selectedSectionIds.length >= 5) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'You can select up to 5 sections.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() {
+                              if (checked == true) {
+                                _selectedSectionIds.add(section.id);
+                              } else {
+                                _selectedSectionIds.remove(section.id);
+                              }
+                            });
+                          },
+                  ),
+                ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _isSaving ? null : _save,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save Sections'),
+              ),
+              TextButton(
+                onPressed: _isSaving ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EditProfileDialog extends StatefulWidget {
   const _EditProfileDialog({
     required this.uid,
@@ -2178,6 +2421,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final TextEditingController _sectionController;
   late final TextEditingController _phoneController;
   late final bool _isStudent;
+  List<SectionModel> _sections = const [];
+  String? _selectedStudentSectionId;
   bool _isSaving = false;
 
   @override
@@ -2199,6 +2444,20 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     _phoneController = TextEditingController(
       text: _value(widget.data['phoneNumber']),
     );
+    _selectedStudentSectionId = widget.data['sectionId']?.toString();
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('sections')
+        .where('isActive', isEqualTo: true)
+        .get();
+    if (!mounted) return;
+    setState(() {
+      _sections = snapshot.docs.map(SectionModel.fromFirestore).toList()
+        ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    });
   }
 
   @override
@@ -2218,6 +2477,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         'firstName': _firstNameController.text,
         'lastName': _lastNameController.text,
         _isStudent ? 'gradeSection' : 'department': _sectionController.text,
+        if (_isStudent) 'sectionId': _selectedStudentSectionId,
+        if (_isStudent)
+          'sectionName': _sections
+              .where((section) => section.id == _selectedStudentSectionId)
+              .map((section) => section.displayName)
+              .firstOrNull,
         'phoneNumber': _phoneController.text,
       });
       if (mounted) Navigator.pop(context, true);
@@ -2301,14 +2566,46 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   validator: _required,
                 ),
                 const SizedBox(height: 14),
-                TextFormField(
-                  controller: _sectionController,
-                  decoration: decoration(
-                    _isStudent ? 'Section / Grade' : 'Department',
-                    Icons.school_outlined,
+                if (_isStudent) ...[
+                  if (_sections.isEmpty)
+                    const Text(
+                      'No active sections are available. Ask the administrator to create or activate a section.',
+                    )
+                  else if (_isStudent)
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          _sections.any(
+                            (section) =>
+                                section.id == _selectedStudentSectionId,
+                          )
+                          ? _selectedStudentSectionId
+                          : null,
+                      decoration: decoration(
+                        'Section / Grade',
+                        Icons.school_outlined,
+                      ),
+                      items: _sections
+                          .map(
+                            (section) => DropdownMenuItem(
+                              value: section.id,
+                              child: Text(section.displayName),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => setState(
+                              () => _selectedStudentSectionId = value,
+                            ),
+                    ),
+                ] else
+                  TextFormField(
+                    controller: _sectionController,
+                    decoration: decoration(
+                      'Department',
+                      Icons.business_outlined,
+                    ),
                   ),
-                  validator: _isStudent ? _required : null,
-                ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _phoneController,
@@ -2350,6 +2647,51 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? 'This field is required' : null;
+}
+
+class _StudentSectionStatusBanner extends StatelessWidget {
+  const _StudentSectionStatusBanner({
+    required this.sectionId,
+    required this.onChangeSection,
+  });
+
+  final String sectionId;
+  final VoidCallback onChangeSection;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('sections')
+          .doc(sectionId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final section = snapshot.data?.exists == true
+            ? SectionModel.fromFirestore(snapshot.data!)
+            : null;
+        if (section == null || (section.isActive && !section.isDeleted)) {
+          return const SizedBox.shrink();
+        }
+        final colors = Theme.of(context).colorScheme;
+        return Card(
+          color: colors.errorContainer,
+          child: ListTile(
+            leading: Icon(Icons.warning_amber_outlined, color: colors.error),
+            title: Text(
+              'Your section is ${section.isDeleted ? 'deleted' : 'inactive'}',
+            ),
+            subtitle: Text(
+              '${section.inactiveReason.isEmpty ? 'The administrator has not provided a reason.' : section.inactiveReason} Select another section to continue borrowing.',
+            ),
+            trailing: TextButton(
+              onPressed: onChangeSection,
+              child: const Text('Change'),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ProfileMessage extends StatelessWidget {

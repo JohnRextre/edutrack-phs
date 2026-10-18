@@ -62,6 +62,8 @@ class BorrowService {
     required DateTime expectedReturnDate,
     required int requestedQuantity,
     String? purpose,
+    String? sectionId,
+    String? sectionName,
   }) async {
     final role = userRole.trim().toLowerCase();
     final quantity = requestedQuantity;
@@ -100,6 +102,31 @@ class BorrowService {
 
     final resRef = _resourceRef(resourceId.trim());
     final transRef = _transactions.doc();
+    final normalizedSectionId = sectionId?.trim() ?? '';
+    final sectionRef = normalizedSectionId.isEmpty
+        ? null
+        : _firestore.collection('sections').doc(normalizedSectionId);
+    var existingSectionQuantity = 0;
+    if (sectionRef != null) {
+      final activeSnapshot = await _transactions
+          .where('sectionId', isEqualTo: normalizedSectionId)
+          .get();
+      for (final document in activeSnapshot.docs) {
+        final status = document.data()['status']?.toString();
+        if (![
+          BorrowTransactionStatus.pending,
+          BorrowTransactionStatus.borrowed,
+          BorrowTransactionStatus.returnPending,
+          BorrowTransactionStatus.returnRejected,
+        ].contains(status)) {
+          continue;
+        }
+        existingSectionQuantity += _asInt(
+          document.data()['requestedQuantity'],
+          fallback: 1,
+        );
+      }
+    }
 
     await _firestore.runTransaction((transaction) async {
       final resourceSnap = await transaction.get(resRef);
@@ -142,6 +169,40 @@ class BorrowService {
         );
       }
 
+      if (sectionRef != null) {
+        final sectionSnap = await transaction.get(sectionRef);
+        final sectionData = sectionSnap.data();
+        if (!sectionSnap.exists ||
+            sectionData == null ||
+            sectionData['isActive'] == false) {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'section-unavailable',
+            message: 'The selected section is no longer available.',
+          );
+        }
+        final limit = _asInt(
+          sectionData['maxActiveBorrowQuantity'],
+          fallback: 0,
+        );
+        final storedCurrent = sectionData['currentActiveBorrowQuantity'];
+        final current = storedCurrent == null
+            ? existingSectionQuantity
+            : _asInt(storedCurrent, fallback: existingSectionQuantity);
+        if (limit < 1 || current + quantity > limit) {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'section-borrow-limit',
+            message:
+                '${sectionName?.trim().isNotEmpty == true ? sectionName!.trim() : 'This section'} has reached its maximum active borrow limit of $limit items. Remaining: ${limit - current}.',
+          );
+        }
+        transaction.update(sectionRef, {
+          'currentActiveBorrowQuantity': current + quantity,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
       // Deduct available stock immediately
       final newAvailable = available - quantity;
       transaction.update(resRef, {
@@ -163,6 +224,9 @@ class BorrowService {
         'actualReturnDate': null,
         'returnSubmittedDate': null,
         'purpose': purpose?.trim() ?? '',
+        if (sectionId != null && sectionId.trim().isNotEmpty)
+          'sectionId': sectionId.trim(),
+        'sectionName': sectionName?.trim() ?? '',
         'status': BorrowTransactionStatus.borrowed,
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -289,6 +353,7 @@ class BorrowService {
   Future<void> submitReturn({
     required String transactionId,
     required String returnType,
+    required int returnQuantity,
     required String itemConditionNotes,
     String? overdueReason,
     String? returnProofImage,
@@ -308,6 +373,13 @@ class BorrowService {
         plugin: 'cloud_firestore',
         code: 'invalid-return-type',
         message: 'Please select a valid return type.',
+      );
+    }
+    if (returnQuantity < 1) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-return-quantity',
+        message: 'Return quantity must be at least 1.',
       );
     }
 
@@ -331,6 +403,14 @@ class BorrowService {
     }
 
     final txnData = txnSnap.data()!;
+    final borrowedQuantity = _asInt(txnData['requestedQuantity'], fallback: 1);
+    if (returnQuantity > borrowedQuantity) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-return-quantity',
+        message: 'Return quantity cannot exceed the borrowed quantity.',
+      );
+    }
     final status = txnData['status']?.toString();
     if (status != BorrowTransactionStatus.borrowed &&
         status != BorrowTransactionStatus.returnRejected) {
@@ -359,6 +439,7 @@ class BorrowService {
     await txnRef.update({
       'status': BorrowTransactionStatus.returnPending,
       'returnType': trimmedReturnType,
+      'returnQuantity': returnQuantity,
       'itemConditionNotes': trimmedCondition,
       'returnSubmittedDate': FieldValue.serverTimestamp(),
       'rejectionReason': FieldValue.delete(),
@@ -553,15 +634,41 @@ class BorrowService {
     );
     final total = _asInt(resourceSnap.data()?['totalQuantity'], fallback: 1);
     final requestedQuantity = _asInt(txnData['requestedQuantity'], fallback: 1);
+    final returnQuantity = _asInt(
+      txnData['returnQuantity'],
+      fallback: requestedQuantity,
+    ).clamp(1, requestedQuantity);
+    final remainingQuantity = requestedQuantity - returnQuantity;
 
     final batch = _firestore.batch();
     batch.update(resourceRef, {
-      'availableQuantity': (available + requestedQuantity).clamp(0, total),
+      'availableQuantity': (available + returnQuantity).clamp(0, total),
     });
-    batch.update(txnRef, {
-      'status': BorrowTransactionStatus.returned,
-      'actualReturnDate': FieldValue.serverTimestamp(),
-    });
+    if (remainingQuantity == 0) {
+      batch.update(txnRef, {
+        'status': BorrowTransactionStatus.returned,
+        'actualReturnDate': FieldValue.serverTimestamp(),
+        'returnQuantity': FieldValue.delete(),
+      });
+    } else {
+      batch.update(txnRef, {
+        'status': BorrowTransactionStatus.borrowed,
+        'requestedQuantity': remainingQuantity,
+        'returnQuantity': FieldValue.delete(),
+        'returnType': FieldValue.delete(),
+        'itemConditionNotes': FieldValue.delete(),
+        'returnSubmittedDate': FieldValue.delete(),
+        'returnProofImage': FieldValue.delete(),
+        'overdueReason': FieldValue.delete(),
+      });
+    }
+    final sectionId = txnData['sectionId']?.toString().trim() ?? '';
+    if (sectionId.isNotEmpty) {
+      batch.update(_firestore.collection('sections').doc(sectionId), {
+        'currentActiveBorrowQuantity': FieldValue.increment(-returnQuantity),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
     await batch.commit();
   }
 
@@ -763,14 +870,42 @@ class BorrowService {
         .map(_mapAndSortTransactions);
   }
 
-  /// Active borrowings for a user (status = borrowed).
+  /// Active borrowings for a user, including the unreturned remainder of a
+  /// partial return that is awaiting verification or correction.
   Stream<List<BorrowTransaction>> watchActiveBorrowings(String userId) {
     final trimmedUserId = userId.trim();
     return _transactions
         .where('userId', isEqualTo: trimmedUserId)
-        .where('status', isEqualTo: BorrowTransactionStatus.borrowed)
         .snapshots()
-        .map(_mapAndSortTransactions);
+        .map((snapshot) {
+          final transactions = snapshot.docs
+              .map(BorrowTransaction.fromFirestore)
+              .where((transaction) {
+                if (transaction.status == BorrowTransactionStatus.borrowed) {
+                  return true;
+                }
+                if (transaction.status !=
+                        BorrowTransactionStatus.returnPending &&
+                    transaction.status !=
+                        BorrowTransactionStatus.returnRejected) {
+                  return false;
+                }
+                final returnQuantity = transaction.returnQuantity;
+                return returnQuantity != null &&
+                    returnQuantity < transaction.requestedQuantity;
+              })
+              .map((transaction) {
+                final returnQuantity = transaction.returnQuantity;
+                if (returnQuantity == null) return transaction;
+                return transaction.copyWith(
+                  requestedQuantity:
+                      transaction.requestedQuantity - returnQuantity,
+                );
+              })
+              .toList();
+          transactions.sort((a, b) => b.borrowDate.compareTo(a.borrowDate));
+          return transactions;
+        });
   }
 
   /// Live dashboard counts for the authenticated borrower.

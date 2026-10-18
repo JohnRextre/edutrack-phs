@@ -150,10 +150,15 @@ class _ReturnVerificationDetailsScreenState
                           transaction.returnSubmittedDate!,
                         ),
                       ),
-                    if (transaction.requestedQuantity > 1)
+                    if (transaction.requestedQuantity > 1 ||
+                        transaction.returnQuantity != null)
                       _DetailRow(
-                        label: 'Quantity',
-                        value: transaction.requestedQuantity.toString(),
+                        label: transaction.returnQuantity == null
+                            ? 'Quantity'
+                            : 'Quantity to Return',
+                        value:
+                            transaction.returnQuantity?.toString() ??
+                            transaction.requestedQuantity.toString(),
                       ),
                   ],
                 ),

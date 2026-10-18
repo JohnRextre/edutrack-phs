@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../models/account_role.dart';
+import '../../models/section_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 
@@ -26,6 +28,27 @@ class _AddUserScreenState extends State<AddUserScreen> {
   bool _isSubmitting = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  List<SectionModel> _sections = const [];
+  String? _sectionId;
+  final Set<String> _teacherSectionIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('sections')
+        .where('isActive', isEqualTo: true)
+        .get();
+    if (!mounted) return;
+    setState(() {
+      _sections = snapshot.docs.map(SectionModel.fromFirestore).toList()
+        ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    });
+  }
 
   @override
   void dispose() {
@@ -49,6 +72,10 @@ class _AddUserScreenState extends State<AddUserScreen> {
         role: _selectedRole,
         password: passwordController.text,
         departmentOrSection: orgDetailsController.text,
+        sectionId: _selectedRole == AccountRole.student ? _sectionId : null,
+        assignedSectionIds: _selectedRole == AccountRole.teacher
+            ? _teacherSectionIds.toList()
+            : const [],
         isApproved: true,
       );
       if (!mounted) return;
@@ -96,6 +123,72 @@ class _AddUserScreenState extends State<AddUserScreen> {
                       validator: (value) => _required(value, 'Full name'),
                     ),
                     const SizedBox(height: 16),
+                    if (_selectedRole == AccountRole.student)
+                      DropdownButtonFormField<String>(
+                        initialValue: _sectionId,
+                        decoration: const InputDecoration(
+                          labelText: 'Section (Optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _sections
+                            .map(
+                              (section) => DropdownMenuItem(
+                                value: section.id,
+                                child: Text(section.displayName),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isSubmitting
+                            ? null
+                            : (value) => setState(() => _sectionId = value),
+                      )
+                    else if (_selectedRole == AccountRole.teacher)
+                      FormField<void>(
+                        builder: (field) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Sections handled (Optional)'),
+                            ..._sections.map(
+                              (section) => CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(section.displayName),
+                                value: _teacherSectionIds.contains(section.id),
+                                onChanged: _isSubmitting
+                                    ? null
+                                    : (checked) => setState(() {
+                                        if (checked == true &&
+                                            _teacherSectionIds.length >= 5) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Teachers can be assigned to up to 5 sections.',
+                                              ),
+                                            ),
+                                          );
+                                        } else if (checked == true) {
+                                          _teacherSectionIds.add(section.id);
+                                        } else if (checked == false) {
+                                          _teacherSectionIds.remove(section.id);
+                                        }
+                                        field.didChange(null);
+                                      }),
+                              ),
+                            ),
+                            if (field.hasError)
+                              Text(
+                                field.errorText!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    if (_selectedRole == AccountRole.student ||
+                        _selectedRole == AccountRole.teacher)
+                      const SizedBox(height: 16),
                     _field(
                       controller: schoolIdController,
                       label: 'School ID *',

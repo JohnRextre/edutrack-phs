@@ -31,6 +31,20 @@ class UserService {
     });
   }
 
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> watchTeachers() {
+    return _users.snapshots().map(
+      (snapshot) =>
+          snapshot.docs.where((doc) {
+            final role = (doc.data()['role'] ?? '').toString().toLowerCase();
+            return role == 'teacher' && doc.data()['status'] != 'Suspended';
+          }).toList()..sort(
+            (a, b) => (a.data()['fullName'] ?? '').toString().compareTo(
+              (b.data()['fullName'] ?? '').toString(),
+            ),
+          ),
+    );
+  }
+
   /// Creates a Firebase Auth account and writes a Firestore profile.
   ///
   /// Uses a secondary Firebase Auth instance so the admin session is preserved.
@@ -41,6 +55,8 @@ class UserService {
     required AccountRole role,
     required String password,
     String? departmentOrSection,
+    String? sectionId,
+    List<String> assignedSectionIds = const [],
     bool isApproved = true,
   }) {
     return createUser(
@@ -50,6 +66,8 @@ class UserService {
       role: role,
       password: password,
       departmentOrSection: departmentOrSection,
+      sectionId: sectionId,
+      assignedSectionIds: assignedSectionIds,
       isApproved: isApproved,
     );
   }
@@ -61,6 +79,8 @@ class UserService {
     required AccountRole role,
     required String password,
     String? departmentOrSection,
+    String? sectionId,
+    List<String> assignedSectionIds = const [],
     bool isApproved = true,
   }) async {
     final trimmedName = fullName.trim();
@@ -121,6 +141,9 @@ class UserService {
         'email': trimmedEmail,
         'role': AuthService.firestoreRoleLabel(role),
         'departmentOrSection': trimmedDepartment,
+        if (sectionId != null && sectionId.trim().isNotEmpty)
+          'sectionId': sectionId.trim(),
+        'assignedSectionIds': assignedSectionIds,
         'status': 'Active',
         'isApproved': isApproved,
         'createdAt': FieldValue.serverTimestamp(),
@@ -236,7 +259,14 @@ class UserService {
     }
 
     final updates = <String, dynamic>{};
-    for (final key in ['firstName', 'lastName', 'gradeSection', 'department']) {
+    for (final key in [
+      'firstName',
+      'lastName',
+      'gradeSection',
+      'department',
+      'sectionId',
+      'sectionName',
+    ]) {
       if (data.containsKey(key)) {
         final value = data[key]?.toString().trim() ?? '';
         if (value.isEmpty && key != 'department') {
@@ -248,6 +278,20 @@ class UserService {
         }
         updates[key] = value;
       }
+    }
+    if (data.containsKey('assignedSectionIds')) {
+      final values = data['assignedSectionIds'];
+      if (values is! Iterable) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'invalid-profile',
+          message: 'Section assignments are invalid.',
+        );
+      }
+      updates['assignedSectionIds'] = values
+          .map((value) => value.toString().trim())
+          .where((value) => value.isNotEmpty)
+          .toList();
     }
     if (data.containsKey('phoneNumber')) {
       updates['phoneNumber'] = data['phoneNumber']?.toString().trim() ?? '';

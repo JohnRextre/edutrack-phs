@@ -1,11 +1,16 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/account_role.dart';
 import '../../models/resource_item.dart';
 import '../../services/auth_service.dart';
 import '../../services/borrow_service.dart';
+import '../../models/section_model.dart';
+import '../../services/section_service.dart';
 
 class BorrowRequestScreen extends StatefulWidget {
   const BorrowRequestScreen({super.key, required this.resource});
@@ -20,6 +25,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
   final _formKey = GlobalKey<FormState>();
   final _borrowService = BorrowService();
   final _purposeController = TextEditingController();
+  final _quantityController = TextEditingController(text: '1');
 
   late DateTime _borrowDate;
   DateTime? _expectedReturnDate;
@@ -32,6 +38,8 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
   String? _userName;
   String? _userRole;
   bool _loadingUser = true;
+  List<SectionModel> _assignedSections = const [];
+  SectionModel? _selectedSection;
 
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   static const _months = [
@@ -56,7 +64,22 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
   int get _maxQuantity {
     final cap = resource.maxBorrowLimit;
     final available = resource.availableQuantity;
-    return cap < available ? cap : available;
+    var maxQuantity = cap < available ? cap : available;
+    final sectionRemaining = _sectionRemaining;
+    if (_isTeacher &&
+        _selectedSection != null &&
+        sectionRemaining < maxQuantity) {
+      maxQuantity = sectionRemaining;
+    }
+    return maxQuantity;
+  }
+
+  int get _sectionRemaining {
+    final section = _selectedSection;
+    if (section == null) return 0;
+    return (section.maxActiveBorrowQuantity -
+            section.currentActiveBorrowQuantity)
+        .clamp(0, section.maxActiveBorrowQuantity);
   }
 
   @override
@@ -69,6 +92,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
   @override
   void dispose() {
     _purposeController.dispose();
+    _quantityController.dispose();
     super.dispose();
   }
 
@@ -97,6 +121,29 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
         }
       }
     });
+
+    final sectionIds = (doc.data()?['assignedSectionIds'] is Iterable)
+        ? (doc.data()?['assignedSectionIds'] as Iterable)
+              .map((value) => value.toString())
+              .toList()
+        : <String>[];
+    final studentSectionId = doc.data()?['sectionId']?.toString();
+    final allSections = await FirebaseFirestore.instance
+        .collection(SectionService.collection)
+        .where('isActive', isEqualTo: true)
+        .get();
+    final sections = allSections.docs.map(SectionModel.fromFirestore).toList();
+    final allowed = _userRole == 'teacher'
+        ? sections.where((section) => sectionIds.contains(section.id)).toList()
+        : sections.where((section) => section.id == studentSectionId).toList();
+    if (mounted) {
+      setState(() {
+        _assignedSections = allowed;
+        if (_userRole == 'student' && allowed.length == 1) {
+          _selectedSection = allowed.first;
+        }
+      });
+    }
 
     if (_userId != null && _userRole == 'student') {
       _hasActiveStudentBorrow = await _borrowService
@@ -188,16 +235,45 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
     return null;
   }
 
-  void _incrementQuantity() {
-    if (_requestedQuantity < _maxQuantity) {
-      setState(() => _requestedQuantity++);
+  void _decrementQuantity() {
+    if (_requestedQuantity > 1) {
+      setState(() {
+        _requestedQuantity--;
+        _quantityController.text = _requestedQuantity.toString();
+      });
     }
   }
 
-  void _decrementQuantity() {
-    if (_requestedQuantity > 1) {
-      setState(() => _requestedQuantity--);
+  void _incrementQuantity() {
+    if (_requestedQuantity < _maxQuantity) {
+      setState(() {
+        _requestedQuantity++;
+        _quantityController.text = _requestedQuantity.toString();
+      });
     }
+  }
+
+  void _handleQuantityChanged(String value) {
+    final quantity = int.tryParse(value);
+    if (quantity != null && quantity >= 1 && quantity <= _maxQuantity) {
+      setState(() => _requestedQuantity = quantity);
+    }
+  }
+
+  String? get _quantityError {
+    final quantity = int.tryParse(_quantityController.text);
+    if (quantity == null || quantity < 1) {
+      return 'Enter a quantity of at least 1.';
+    }
+    if (quantity > _maxQuantity) {
+      if (_isTeacher &&
+          _selectedSection != null &&
+          _sectionRemaining < resource.maxBorrowLimit) {
+        return 'Quantity cannot exceed the section remaining limit of $_sectionRemaining.';
+      }
+      return 'Quantity cannot exceed $_maxQuantity.';
+    }
+    return null;
   }
 
   Future<void> _submit() async {
@@ -214,6 +290,21 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
         'You already have an active borrow request for this item. Please return your existing item before borrowing it again.',
         isError: true,
       );
+      return;
+    }
+    if (_selectedSection == null) {
+      _showSnackBar(
+        _userRole == 'teacher'
+            ? 'Select at least one section in Profile > Sections Handled before borrowing.'
+            : 'Select your section in Edit Profile before borrowing.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (_isTeacher && _quantityError != null) {
+      setState(() => _submitted = true);
+      _showSnackBar(_quantityError!, isError: true);
       return;
     }
 
@@ -241,6 +332,8 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
         purpose: _purposeController.text.trim().isEmpty
             ? null
             : _purposeController.text.trim(),
+        sectionId: _selectedSection?.id,
+        sectionName: _selectedSection?.displayName,
       );
 
       if (!mounted) return;
@@ -350,9 +443,64 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                             quantity: _requestedQuantity,
                             maxQuantity: _maxQuantity,
                             maxBorrowLimit: resource.maxBorrowLimit,
+                            quantityController: _quantityController,
+                            errorText: _submitted && _isTeacher
+                                ? _quantityError
+                                : null,
+                            onQuantityChanged: _handleQuantityChanged,
                             onIncrement: _incrementQuantity,
                             onDecrement: _decrementQuantity,
                           ),
+                          if (_assignedSections.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<SectionModel>(
+                              initialValue: _selectedSection,
+                              decoration: const InputDecoration(
+                                labelText: 'Section *',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: _assignedSections
+                                  .map(
+                                    (section) => DropdownMenuItem(
+                                      value: section,
+                                      child: Text(section.displayName),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: _isTeacher
+                                  ? (value) {
+                                      setState(() {
+                                        _selectedSection = value;
+                                        if (_maxQuantity > 0 &&
+                                            _requestedQuantity > _maxQuantity) {
+                                          _requestedQuantity = _maxQuantity;
+                                          _quantityController.text =
+                                              _maxQuantity.toString();
+                                        }
+                                      });
+                                    }
+                                  : null,
+                              validator: (value) => value == null
+                                  ? 'Please select a section.'
+                                  : null,
+                            ),
+                            if (_selectedSection != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  'Section limit: ${_selectedSection!.maxActiveBorrowQuantity} active item(s) • '
+                                  'Remaining: $_sectionRemaining',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                          ] else if (!_loadingUser) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              _isTeacher
+                                  ? 'No active section is selected for this account. Open Profile > Sections Handled and select another section before borrowing.'
+                                  : 'No active section is selected for this account. Open Profile > Edit Profile and select another section before borrowing.',
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _purposeController,
@@ -593,6 +741,23 @@ class _ResourceImage extends StatelessWidget {
 
     if (imageUrl.isEmpty) return fallback();
 
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        final base64Data = imageUrl.contains(',')
+            ? imageUrl.split(',').last
+            : imageUrl;
+        return Image.memory(
+          base64Decode(base64Data),
+          height: height,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, exception, stackTrace) => fallback(),
+        );
+      } on FormatException {
+        return fallback();
+      }
+    }
+
     if (imageUrl.startsWith('http')) {
       return Image.network(
         imageUrl,
@@ -659,6 +824,9 @@ class _QuantityField extends StatelessWidget {
     required this.quantity,
     required this.maxQuantity,
     required this.maxBorrowLimit,
+    required this.quantityController,
+    required this.errorText,
+    required this.onQuantityChanged,
     required this.onIncrement,
     required this.onDecrement,
   });
@@ -667,6 +835,9 @@ class _QuantityField extends StatelessWidget {
   final int quantity;
   final int maxQuantity;
   final int maxBorrowLimit;
+  final TextEditingController quantityController;
+  final String? errorText;
+  final ValueChanged<String> onQuantityChanged;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
 
@@ -677,8 +848,9 @@ class _QuantityField extends StatelessWidget {
         labelText: 'Quantity',
         border: const OutlineInputBorder(),
         helperText: isTeacher
-            ? 'Teachers may request up to $maxBorrowLimit per transaction'
+            ? 'Enter 1-$maxQuantity. Teachers may request up to $maxBorrowLimit per transaction'
             : 'Students are limited to 1 item per request',
+        errorText: errorText,
       ),
       child: isTeacher
           ? Row(
@@ -688,9 +860,27 @@ class _QuantityField extends StatelessWidget {
                   icon: const Icon(Icons.remove),
                 ),
                 Expanded(
-                  child: Text(
-                    quantity.toString(),
+                  child: TextField(
+                    controller: quantityController,
+                    onChanged: onQuantityChanged,
                     textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      TextInputFormatter.withFunction((oldValue, newValue) {
+                        if (newValue.text.isEmpty) return newValue;
+                        final parsed = int.tryParse(newValue.text);
+                        if (parsed == null ||
+                            parsed < 1 ||
+                            parsed > maxQuantity) {
+                          return oldValue;
+                        }
+                        return newValue;
+                      }),
+                    ],
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),

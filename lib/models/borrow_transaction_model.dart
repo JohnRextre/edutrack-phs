@@ -116,7 +116,10 @@ class BorrowTransaction {
     this.returnSubmittedDate,
     required this.status,
     this.requestedQuantity = 1,
+    this.returnQuantity,
     this.purpose = '',
+    this.sectionId,
+    this.sectionName = '',
     this.rejectionReason,
     this.returnType,
     this.requiredReturnType,
@@ -144,9 +147,12 @@ class BorrowTransaction {
 
   /// Number of units requested / borrowed in this transaction.
   final int requestedQuantity;
+  final int? returnQuantity;
 
   /// Optional reason provided by the borrower at request time.
   final String purpose;
+  final String? sectionId;
+  final String sectionName;
 
   /// Optional reason provided by the custodian when rejecting a request/return.
   final String? rejectionReason;
@@ -165,6 +171,38 @@ class BorrowTransaction {
 
   /// Optional base64 data URI / http URL of proof image attached by borrower at return time.
   final String? returnProofImage;
+
+  BorrowTransaction copyWith({
+    String? status,
+    int? requestedQuantity,
+    int? returnQuantity,
+  }) {
+    return BorrowTransaction(
+      id: id,
+      resourceId: resourceId,
+      resourceName: resourceName,
+      resourceCode: resourceCode,
+      userId: userId,
+      userName: userName,
+      userRole: userRole,
+      borrowDate: borrowDate,
+      expectedReturnDate: expectedReturnDate,
+      actualReturnDate: actualReturnDate,
+      returnSubmittedDate: returnSubmittedDate,
+      status: status ?? this.status,
+      requestedQuantity: requestedQuantity ?? this.requestedQuantity,
+      returnQuantity: returnQuantity ?? this.returnQuantity,
+      purpose: purpose,
+      sectionId: sectionId,
+      sectionName: sectionName,
+      rejectionReason: rejectionReason,
+      returnType: returnType,
+      requiredReturnType: requiredReturnType,
+      itemConditionNotes: itemConditionNotes,
+      overdueReason: overdueReason,
+      returnProofImage: returnProofImage,
+    );
+  }
 
   /// Derives `overdue` when still borrowed past the expected return date.
   String get effectiveStatus {
@@ -256,7 +294,10 @@ class BorrowTransaction {
           : null,
       'status': status,
       'requestedQuantity': requestedQuantity,
+      if (returnQuantity != null) 'returnQuantity': returnQuantity,
       'purpose': purpose,
+      if (sectionId != null) 'sectionId': sectionId,
+      'sectionName': sectionName,
       if (rejectionReason != null) 'rejectionReason': rejectionReason,
       if (returnType != null) 'returnType': returnType,
       if (requiredReturnType != null) 'requiredReturnType': requiredReturnType,
@@ -282,7 +323,12 @@ class BorrowTransaction {
       returnSubmittedDate: _dateFrom(map['returnSubmittedDate']),
       status: _normalizeStatus(map['status']),
       requestedQuantity: _asInt(map['requestedQuantity'], fallback: 1),
+      returnQuantity: map['returnQuantity'] == null
+          ? null
+          : _asInt(map['returnQuantity'], fallback: 1),
       purpose: (map['purpose'] ?? '').toString(),
+      sectionId: map['sectionId']?.toString(),
+      sectionName: (map['sectionName'] ?? '').toString(),
       rejectionReason: map['rejectionReason']?.toString(),
       returnType: map['returnType']?.toString(),
       requiredReturnType: map['requiredReturnType']?.toString(),

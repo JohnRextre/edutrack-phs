@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+
+import '../services/qr_service.dart';
 
 class QrCameraScannerScreen extends StatefulWidget {
   const QrCameraScannerScreen({super.key});
@@ -50,6 +53,12 @@ class _QrCameraScannerScreenState extends State<QrCameraScannerScreen>
 
     final rawValue = capture.barcodes.firstOrNull?.rawValue;
     if (rawValue == null || rawValue.trim().isEmpty) return;
+    if (!QrService.isEduTrackPayload(rawValue)) {
+      _showGalleryMessage(
+        'This is not an EduTrack PHS QR code. Please scan an EduTrack resource QR code.',
+      );
+      return;
+    }
 
     _hasReturnedResult = true;
     _controller.stop();
@@ -105,6 +114,37 @@ class _QrCameraScannerScreenState extends State<QrCameraScannerScreen>
     Navigator.of(context).pop(payload);
   }
 
+  Future<void> _pickQrImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (!mounted || picked == null) return;
+
+    final capture = await _controller.analyzeImage(picked.path);
+    if (!mounted) return;
+    final rawValue = capture?.barcodes.firstOrNull?.rawValue?.trim();
+    if (rawValue == null || rawValue.isEmpty) {
+      _showGalleryMessage(
+        'No QR code was found in that image. Please choose a clear EduTrack QR code.',
+      );
+      return;
+    }
+    if (!QrService.isEduTrackPayload(rawValue)) {
+      _showGalleryMessage(
+        'This is not an EduTrack PHS QR code. Please choose an EduTrack resource QR image.',
+      );
+      return;
+    }
+
+    _hasReturnedResult = true;
+    _controller.stop();
+    Navigator.of(context).pop(rawValue);
+  }
+
+  void _showGalleryMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+    );
+  }
+
   Future<void> _toggleTorch() async {
     await _controller.toggleTorch();
     if (mounted) {
@@ -134,7 +174,10 @@ class _QrCameraScannerScreenState extends State<QrCameraScannerScreen>
             child: SafeArea(
               bottom: false,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -172,6 +215,12 @@ class _QrCameraScannerScreenState extends State<QrCameraScannerScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _ScannerIconButton(
+                          tooltip: 'Choose QR image',
+                          icon: Icons.image_search_outlined,
+                          onPressed: _pickQrImage,
+                        ),
+                        const SizedBox(width: 8),
+                        _ScannerIconButton(
                           tooltip: 'Toggle flash',
                           icon: _isTorchEnabled
                               ? Icons.flash_on
@@ -198,7 +247,10 @@ class _QrCameraScannerScreenState extends State<QrCameraScannerScreen>
             top: (screenHeight / 2) + 148,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(16),
@@ -307,22 +359,10 @@ class _ScannerOverlayPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     const cornerLength = 30.0;
     final corners = [
-      [
-        scanRect.topLeft,
-        scanRect.topLeft + const Offset(cornerLength, 0),
-      ],
-      [
-        scanRect.topLeft,
-        scanRect.topLeft + const Offset(0, cornerLength),
-      ],
-      [
-        scanRect.topRight,
-        scanRect.topRight + const Offset(-cornerLength, 0),
-      ],
-      [
-        scanRect.topRight,
-        scanRect.topRight + const Offset(0, cornerLength),
-      ],
+      [scanRect.topLeft, scanRect.topLeft + const Offset(cornerLength, 0)],
+      [scanRect.topLeft, scanRect.topLeft + const Offset(0, cornerLength)],
+      [scanRect.topRight, scanRect.topRight + const Offset(-cornerLength, 0)],
+      [scanRect.topRight, scanRect.topRight + const Offset(0, cornerLength)],
       [
         scanRect.bottomLeft,
         scanRect.bottomLeft + const Offset(cornerLength, 0),

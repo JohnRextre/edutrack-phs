@@ -5,6 +5,7 @@ import 'screens/admin_dashboard_screen.dart';
 import 'screens/account_activities_screen.dart';
 import 'screens/admin_system_logs_screen.dart';
 import 'screens/admin_user_management_screen.dart';
+import 'screens/admin_sections_screen.dart';
 import 'screens/custodian_borrow_requests_screen.dart';
 import 'screens/custodian/reports_analytics_screen.dart';
 import 'screens/custodian/learning_resources_screen.dart';
@@ -81,6 +82,7 @@ class MyApp extends StatelessWidget {
         '/custodian-reports': (context) => const ReportsAnalyticsScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/admin-users': (context) => const AdminUserManagementScreen(),
+        '/admin-sections': (context) => const AdminSectionsScreen(),
         '/admin-logs': (context) => const AdminSystemLogsScreen(),
       },
     );

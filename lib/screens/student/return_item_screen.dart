@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/borrow_transaction_model.dart';
 import '../../services/borrow_service.dart';
@@ -24,29 +25,92 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _overdueReasonController = TextEditingController();
   final _itemConditionController = TextEditingController();
+  late final TextEditingController _quantityController;
   final _borrowService = BorrowService();
   String? _proofImageUrl;
+  late String _selectedReturnType;
   bool _isSubmitting = false;
 
   BorrowTransaction get transaction => widget.transaction;
 
+  bool get _isTeacher => transaction.userRole.trim().toLowerCase() == 'teacher';
+
   bool get _isOverdue => DateTime.now().isAfter(transaction.expectedReturnDate);
+
+  int get _quantityToReturn =>
+      _isTeacher ? int.tryParse(_quantityController.text) ?? 0 : 1;
+
+  int get _remainingAfterReturn =>
+      transaction.requestedQuantity - _quantityToReturn;
+
+  void _setQuantity(int quantity) {
+    _quantityController.text = quantity.toString();
+    setState(() {});
+  }
+
+  void _decrementQuantity() {
+    if (_quantityToReturn > 1) _setQuantity(_quantityToReturn - 1);
+  }
+
+  void _incrementQuantity() {
+    if (_quantityToReturn < transaction.requestedQuantity) {
+      _setQuantity(_quantityToReturn + 1);
+    }
+  }
+
+  String _returnTypeLabel(String type) {
+    switch (type) {
+      case ReturnType.goodCondition:
+        return 'Good Condition';
+      case ReturnType.paymentProof:
+        return 'Payment Proof';
+      case ReturnType.repairedProof:
+        return 'Repaired Item';
+      case ReturnType.replacementProof:
+        return 'Replacement Item';
+      default:
+        return ReturnType.labelFor(type);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedReturnType = widget.returnType;
+    _quantityController = TextEditingController(
+      text: _isTeacher ? transaction.requestedQuantity.toString() : '1',
+    );
+  }
 
   @override
   void dispose() {
     _overdueReasonController.dispose();
     _itemConditionController.dispose();
+    _quantityController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    if (_quantityToReturn < 1 ||
+        _quantityToReturn > transaction.requestedQuantity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Quantity must be between 1 and ${transaction.requestedQuantity}.',
+          ),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
     try {
       await _borrowService.submitReturn(
         transactionId: transaction.id,
-        returnType: widget.returnType,
+        returnType: _selectedReturnType,
+        returnQuantity: _quantityToReturn,
         itemConditionNotes: _itemConditionController.text.trim(),
         overdueReason: _isOverdue ? _overdueReasonController.text.trim() : null,
         returnProofImage: _proofImageUrl,
@@ -95,6 +159,113 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                       transaction: transaction,
                       isOverdue: _isOverdue,
                     ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Return Quantity',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Quantity to Return *',
+                        helperText:
+                            'Borrowed: ${transaction.requestedQuantity} • Remaining after this return: $_remainingAfterReturn',
+                        border: const OutlineInputBorder(),
+                      ),
+                      child: _isTeacher
+                          ? Row(
+                              children: [
+                                IconButton.outlined(
+                                  onPressed: _quantityToReturn > 1
+                                      ? _decrementQuantity
+                                      : null,
+                                  icon: const Icon(Icons.remove),
+                                ),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _quantityController,
+                                    textAlign: TextAlign.center,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      TextInputFormatter.withFunction((
+                                        oldValue,
+                                        newValue,
+                                      ) {
+                                        if (newValue.text.isEmpty) {
+                                          return newValue;
+                                        }
+                                        final parsed = int.tryParse(
+                                          newValue.text,
+                                        );
+                                        if (parsed == null ||
+                                            parsed < 1 ||
+                                            parsed >
+                                                transaction.requestedQuantity) {
+                                          return oldValue;
+                                        }
+                                        return newValue;
+                                      }),
+                                    ],
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                    validator: (value) {
+                                      final quantity = int.tryParse(
+                                        value?.trim() ?? '',
+                                      );
+                                      if (quantity == null || quantity < 1) {
+                                        return 'Enter at least 1.';
+                                      }
+                                      return null;
+                                    },
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ),
+                                IconButton.outlined(
+                                  onPressed:
+                                      _quantityToReturn <
+                                          transaction.requestedQuantity
+                                      ? _incrementQuantity
+                                      : null,
+                                  icon: const Icon(Icons.add),
+                                ),
+                              ],
+                            )
+                          : const Text(
+                              '1',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 18),
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: _selectedReturnType,
+                      decoration: const InputDecoration(
+                        labelText: 'Return Type *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.assignment_return_outlined),
+                      ),
+                      items: ReturnType.all
+                          .map(
+                            (type) => DropdownMenuItem(
+                              value: type,
+                              child: Text(
+                                _returnTypeLabel(type),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedReturnType = value);
+                        }
+                      },
+                    ),
                     if (_isOverdue) ...[
                       const SizedBox(height: 16),
                       _OverdueWarningBanner(),
@@ -141,7 +312,8 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              ReturnType.labelFor(widget.returnType),
+                              _returnTypeLabel(_selectedReturnType),
+                              overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: colorScheme.onPrimaryContainer,

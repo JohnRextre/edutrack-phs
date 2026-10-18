@@ -6,7 +6,6 @@ import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrow_transaction_details_modal.dart';
 import '../widgets/borrower_navigation_bar.dart';
-import '../widgets/return_type_selection_dialog.dart';
 import 'student/resubmit_appeal_screen.dart';
 import 'student/return_item_screen.dart';
 
@@ -237,18 +236,14 @@ class _BorrowedItemCard extends StatelessWidget {
   final BorrowService borrowService;
 
   Future<void> _startReturnFlow(BuildContext context) async {
-    final returnType = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) =>
-          ReturnTypeSelectionDialog(resourceName: transaction.resourceName),
-    );
-
-    if (returnType == null || !context.mounted) return;
+    if (transaction.status == BorrowTransactionStatus.returnPending) return;
 
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            ReturnItemScreen(transaction: transaction, returnType: returnType),
+        builder: (_) => ReturnItemScreen(
+          transaction: transaction,
+          returnType: ReturnType.goodCondition,
+        ),
       ),
     );
   }
@@ -289,6 +284,24 @@ class _BorrowedItemCard extends StatelessWidget {
                 Text('Quantity: ${transaction.requestedQuantity}'),
               Text('Borrowed: ${formatBorrowDate(transaction.borrowDate)}'),
               Text('Due: ${formatBorrowDate(transaction.expectedReturnDate)}'),
+              if (transaction.status ==
+                  BorrowTransactionStatus.returnPending) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Return verification pending for '
+                    '${transaction.returnQuantity ?? 0} item(s). '
+                    '${transaction.requestedQuantity} item(s) remain with you.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -328,7 +341,11 @@ class _BorrowedItemCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => _startReturnFlow(context),
+                      onPressed:
+                          transaction.status ==
+                              BorrowTransactionStatus.returnPending
+                          ? null
+                          : () => _startReturnFlow(context),
                       icon: const Icon(Icons.assignment_return, size: 18),
                       label: const Text('Return Item'),
                     ),
@@ -423,6 +440,12 @@ class _ReturnStatusCardState extends State<_ReturnStatusCard> {
               ),
               const SizedBox(height: 8),
               Text('Code: ${transaction.resourceCode}'),
+              if (transaction.returnQuantity != null)
+                Text(
+                  'Returning: ${transaction.returnQuantity} • '
+                  'Remaining borrowed: '
+                  '${transaction.requestedQuantity - transaction.returnQuantity!}',
+                ),
               if (transaction.returnSubmittedDate != null)
                 Text(
                   'Submitted: ${formatBorrowDate(transaction.returnSubmittedDate!)}',

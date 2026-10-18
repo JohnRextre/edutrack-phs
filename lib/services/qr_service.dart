@@ -103,6 +103,17 @@ class QrService {
     return null;
   }
 
+  /// Whether [payload] was generated for an EduTrack PHS resource.
+  static bool isEduTrackPayload(String payload) {
+    return payload
+        .split('\n')
+        .any(
+          (line) =>
+              line.trim().toLowerCase() ==
+              'system: ${systemIdentifier.toLowerCase()}',
+        );
+  }
+
   /// Validates [qrPayload], calls the QR API, and returns a structured result.
   static Future<QrCodeResult> generateQrCode(String qrPayload) async {
     final trimmedPayload = qrPayload.trim();

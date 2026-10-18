@@ -21,6 +21,7 @@ class AdminSidebar extends StatelessWidget {
     const links = [
       ('Dashboard', Icons.dashboard_rounded),
       ('User Management', Icons.people_alt_rounded),
+      ('Sections', Icons.groups_outlined),
       ('System Logs', Icons.security_rounded),
       ('Reports', Icons.bar_chart_rounded),
       ('My Account', Icons.person_rounded),

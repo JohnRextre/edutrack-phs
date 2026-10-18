@@ -12,6 +12,8 @@ class UserModel {
     required this.schoolId,
     required this.role,
     this.departmentOrSection = '',
+    this.sectionId,
+    this.assignedSectionIds = const [],
     this.status = 'Active',
     this.createdAt,
     this.photoUrl,
@@ -24,6 +26,8 @@ class UserModel {
   final String schoolId;
   final String role;
   final String departmentOrSection;
+  final String? sectionId;
+  final List<String> assignedSectionIds;
   final String status;
   final DateTime? createdAt;
   final String? photoUrl;
@@ -58,6 +62,8 @@ class UserModel {
       'schoolId': schoolId,
       'role': role,
       'departmentOrSection': departmentOrSection,
+      if (sectionId != null) 'sectionId': sectionId,
+      'assignedSectionIds': assignedSectionIds,
       'status': status,
       if (photoUrl != null) 'photoUrl': photoUrl,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
@@ -92,6 +98,12 @@ class UserModel {
       schoolId: (map['schoolId'] ?? '').toString(),
       role: (map['role'] ?? AccountRole.student.label).toString(),
       departmentOrSection: (map['departmentOrSection'] ?? '').toString(),
+      sectionId: map['sectionId']?.toString(),
+      assignedSectionIds: (map['assignedSectionIds'] is Iterable)
+          ? (map['assignedSectionIds'] as Iterable)
+                .map((value) => value.toString())
+                .toList()
+          : const [],
       status: (map['status'] ?? 'Active').toString(),
       createdAt: createdAt,
       photoUrl:
@@ -113,6 +125,8 @@ class UserModel {
     String? schoolId,
     String? role,
     String? departmentOrSection,
+    String? sectionId,
+    List<String>? assignedSectionIds,
     String? status,
     DateTime? createdAt,
     String? photoUrl,
@@ -125,6 +139,8 @@ class UserModel {
       schoolId: schoolId ?? this.schoolId,
       role: role ?? this.role,
       departmentOrSection: departmentOrSection ?? this.departmentOrSection,
+      sectionId: sectionId ?? this.sectionId,
+      assignedSectionIds: assignedSectionIds ?? this.assignedSectionIds,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       photoUrl: photoUrl ?? this.photoUrl,
