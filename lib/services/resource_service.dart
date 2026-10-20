@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/resource_item.dart';
+import 'auth_service.dart';
 
 /// Firestore-backed CRUD for the `resources` collection.
 class ResourceService {
@@ -79,6 +81,13 @@ class ResourceService {
       'imageUrl': imageUrl?.trim() ?? '',
       'createdAt': FieldValue.serverTimestamp(),
     });
+    await _recordResourceActivity(
+      actionType: 'resource_added',
+      title: 'Added a learning resource',
+      description: 'Added "$trimmedName" ($trimmedCode) to Learning Resources.',
+      resourceName: trimmedName,
+      resourceCode: trimmedCode,
+    );
   }
 
   Future<void> updateResource({
@@ -145,6 +154,14 @@ class ResourceService {
       'imageUrl': imageUrl?.trim() ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    await _recordResourceActivity(
+      actionType: 'resource_edited',
+      title: 'Edited a learning resource',
+      description:
+          'Edited "$trimmedName" ($trimmedCode) in Learning Resources.',
+      resourceName: trimmedName,
+      resourceCode: trimmedCode,
+    );
   }
 
   Future<void> deleteResource(String id) async {
@@ -157,6 +174,11 @@ class ResourceService {
       );
     }
     await _resources.doc(trimmedId).delete();
+    await _recordResourceActivity(
+      actionType: 'resource_deleted',
+      title: 'Deleted a learning resource',
+      description: 'Deleted resource "$trimmedId" from Learning Resources.',
+    );
   }
 
   /// Reduces the quantity of a resource. If all total items are deleted, the doc is removed.
@@ -223,6 +245,31 @@ class ResourceService {
         });
       }
     });
+    await _recordResourceActivity(
+      actionType: 'resource_quantity_deleted',
+      title: 'Removed resource quantity',
+      description:
+          'Removed $quantityToDelete item(s) from resource "$trimmedId".',
+    );
+  }
+
+  Future<void> _recordResourceActivity({
+    required String actionType,
+    required String title,
+    required String description,
+    String? resourceName,
+    String? resourceCode,
+  }) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    await AuthService.recordAudit(
+      userId: userId,
+      actionType: actionType,
+      title: title,
+      description: description,
+      resourceName: resourceName,
+      resourceCode: resourceCode,
+    );
   }
 
   Future<ResourceItem?> getResourceById(String id) async {

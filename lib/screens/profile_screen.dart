@@ -72,7 +72,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final role = AuthService.roleFromString(_value(data['role']));
         final isBorrower =
             role.toLowerCase() == 'student' || role.toLowerCase() == 'teacher';
-
         return Scaffold(
           appBar: AppBar(title: Text(isBorrower ? 'Profile' : 'My Account')),
           body: _ProfileContent(
@@ -191,6 +190,7 @@ class _ProfileContent extends StatelessWidget {
         role.toLowerCase() == 'admin';
     final isBorrower =
         role.toLowerCase() == 'student' || role.toLowerCase() == 'teacher';
+    final isCustodian = role.toLowerCase() == 'property custodian';
     final sectionOrDepartment = isStudent
         ? _firstValue(data, ['sectionName', 'gradeSection', 'section'])
         : _firstValue(data, ['department', 'departmentOrSection']);
@@ -371,25 +371,26 @@ class _ProfileContent extends StatelessWidget {
                 ListTile(
                   leading: Icon(Icons.groups_outlined, color: colors.primary),
                   title: const Text('Sections Handled'),
-                  subtitle: const Text(
-                    'Select the sections you currently handle',
-                  ),
+                  subtitle: Text('Select the sections you currently handle'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: onManageTeacherSections,
                 ),
                 const Divider(height: 1),
               ],
-              if (isBorrower) ...[
+              if (isBorrower || isCustodian) ...[
                 ListTile(
                   leading: Icon(Icons.history, color: colors.primary),
                   title: const Text('Account Activities'),
-                  subtitle: const Text(
-                    'View borrowing and transaction history',
+                  subtitle: Text(
+                    isCustodian
+                        ? 'View Learning Resources add, change, and delete history'
+                        : 'View account, borrowing, and transaction history',
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const AccountActivitiesScreen(),
+                      builder: (_) =>
+                          AccountActivitiesScreen(custodianOnly: isCustodian),
                     ),
                   ),
                 ),
@@ -1498,6 +1499,12 @@ class _PasswordSecurityModalState extends State<_PasswordSecurityModal> {
       await widget.authUser.reauthenticateWithCredential(credential);
       // Update with new password
       await widget.authUser.updatePassword(newPassword);
+      await AuthService.recordAudit(
+        userId: widget.authUser.uid,
+        actionType: 'password_changed',
+        title: 'Changed password',
+        description: 'Your account password was changed.',
+      );
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -2424,6 +2431,11 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   List<SectionModel> _sections = const [];
   String? _selectedStudentSectionId;
   bool _isSaving = false;
+  late final String _initialFirstName;
+  late final String _initialLastName;
+  late final String _initialSectionValue;
+  late final String _initialPhone;
+  late final String? _initialStudentSectionId;
 
   @override
   void initState() {
@@ -2445,6 +2457,11 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       text: _value(widget.data['phoneNumber']),
     );
     _selectedStudentSectionId = widget.data['sectionId']?.toString();
+    _initialFirstName = _firstNameController.text.trim();
+    _initialLastName = _lastNameController.text.trim();
+    _initialSectionValue = _sectionController.text.trim();
+    _initialPhone = _phoneController.text.trim();
+    _initialStudentSectionId = _selectedStudentSectionId;
     _loadSections();
   }
 
@@ -2471,19 +2488,36 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final sectionValue = _sectionController.text.trim();
+    final phone = _phoneController.text.trim();
+    final hasChanges =
+        firstName != _initialFirstName ||
+        lastName != _initialLastName ||
+        phone != _initialPhone ||
+        (_isStudent
+            ? _selectedStudentSectionId != _initialStudentSectionId
+            : sectionValue != _initialSectionValue);
+    if (!hasChanges) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No changes detected.')));
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       await widget.userService.updateUserProfile(widget.uid, {
-        'firstName': _firstNameController.text,
-        'lastName': _lastNameController.text,
-        _isStudent ? 'gradeSection' : 'department': _sectionController.text,
+        'firstName': firstName,
+        'lastName': lastName,
+        _isStudent ? 'gradeSection' : 'department': sectionValue,
         if (_isStudent) 'sectionId': _selectedStudentSectionId,
         if (_isStudent)
           'sectionName': _sections
               .where((section) => section.id == _selectedStudentSectionId)
               .map((section) => section.displayName)
               .firstOrNull,
-        'phoneNumber': _phoneController.text,
+        'phoneNumber': phone,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (error) {

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/section_model.dart';
 import '../services/admin_dashboard_service.dart';
 import '../services/report_export_service.dart';
+import '../services/section_service.dart';
+import '../widgets/admin_notifications_button.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -13,6 +16,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final AdminDashboardService _service = AdminDashboardService();
   final ReportExportService _reportService = ReportExportService();
+  final SectionService _sectionService = SectionService();
 
   void _open(String route) => Navigator.pushNamed(context, route);
 
@@ -33,7 +37,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 onAuditReport: metrics == null
                     ? null
                     : () => _exportAuditReport(metrics),
-                onRules: () => _showRulesDialog(),
+                onSections: () => _open('/admin-sections'),
+                onUsers: () => _open('/admin-users'),
               ),
               const SizedBox(height: 16),
               const _AccessBanner(),
@@ -46,18 +51,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _MetricsGrid(
                   metrics: metrics,
                   onUsers: () => _open('/admin-users'),
-                  onApprovals: () => _open('/admin-users'),
                   onAssets: () => _open('/custodian-resources'),
                   onMaintenance: () => _open('/admin-logs'),
                 ),
                 const SizedBox(height: 28),
                 _SectionTitle(
-                  title: 'Pending User Approvals',
-                  actionLabel: 'View All Users',
-                  onAction: () => _open('/admin-users'),
+                  title: 'Section Borrowing Capacity',
+                  actionLabel: 'Manage Sections',
+                  onAction: () => _open('/admin-sections'),
                 ),
                 const SizedBox(height: 10),
-                _PendingUsers(service: _service),
+                _SectionCapacityPreview(service: _sectionService),
                 const SizedBox(height: 28),
                 _SectionTitle(
                   title: 'System Audit Logs',
@@ -92,42 +96,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
     }
   }
-
-  Future<void> _showRulesDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('System Rules'),
-        content: const Text(
-          'Borrow limits and category tags are managed from the system configuration records.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _open('/admin-users');
-            },
-            child: const Text('Open Management'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _Header extends StatelessWidget {
   const _Header({
     required this.onRegister,
     required this.onAuditReport,
-    required this.onRules,
+    required this.onSections,
+    required this.onUsers,
   });
   final VoidCallback onRegister;
   final VoidCallback? onAuditReport;
-  final VoidCallback onRules;
+  final VoidCallback onSections;
+  final VoidCallback onUsers;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -144,17 +125,20 @@ class _Header extends StatelessWidget {
         onPressed: onRegister,
         icon: const Icon(Icons.person_add_alt_1_outlined),
       ),
+      const AdminNotificationsButton(),
       PopupMenuButton<String>(
         tooltip: 'System controls',
         onSelected: (value) {
           if (value == 'audit') onAuditReport?.call();
-          if (value == 'rules') onRules();
+          if (value == 'sections') onSections();
+          if (value == 'users') onUsers();
         },
         itemBuilder: (context) => const [
           PopupMenuItem(value: 'audit', child: Text('System Audit Report')),
+          PopupMenuItem(value: 'sections', child: Text('Manage Sections')),
           PopupMenuItem(
-            value: 'rules',
-            child: Text('Manage Categories & Rules'),
+            value: 'users',
+            child: Text('Manage Users & Custodians'),
           ),
         ],
       ),
@@ -195,14 +179,12 @@ class _MetricsGrid extends StatelessWidget {
   const _MetricsGrid({
     required this.metrics,
     required this.onUsers,
-    required this.onApprovals,
     required this.onAssets,
     required this.onMaintenance,
   });
 
   final AdminDashboardMetrics metrics;
   final VoidCallback onUsers;
-  final VoidCallback onApprovals;
   final VoidCallback onAssets;
   final VoidCallback onMaintenance;
 
@@ -225,14 +207,6 @@ class _MetricsGrid extends StatelessWidget {
             icon: Icons.people_alt_outlined,
             color: Colors.blue,
             onTap: onUsers,
-          ),
-          _MetricCard(
-            title: 'Pending Approvals',
-            value: metrics.pendingApprovals.toString(),
-            detail: 'Accounts awaiting review',
-            icon: Icons.pending_actions_outlined,
-            color: Colors.deepOrange,
-            onTap: onApprovals,
           ),
           _MetricCard(
             title: 'ICT Assets Overview',
@@ -312,113 +286,108 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _PendingUsers extends StatelessWidget {
-  const _PendingUsers({required this.service});
-  final AdminDashboardService service;
+class _SectionCapacityPreview extends StatelessWidget {
+  const _SectionCapacityPreview({required this.service});
 
-  @override
-  Widget build(BuildContext context) => StreamBuilder<List<AdminPendingUser>>(
-    stream: service.watchPendingUsers(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const _LoadingState();
-      }
-      if (snapshot.hasError) {
-        return const _ErrorState(message: 'Unable to load pending accounts.');
-      }
-      final users = snapshot.data ?? const <AdminPendingUser>[];
-      if (users.isEmpty) {
-        return const _EmptyState(
-          message: 'No accounts are waiting for verification.',
-        );
-      }
-      return Card(
-        child: Column(
-          children: users
-              .map(
-                (pending) =>
-                    _PendingUserTile(pending: pending, service: service),
-              )
-              .toList(),
-        ),
-      );
-    },
-  );
-}
-
-class _PendingUserTile extends StatelessWidget {
-  const _PendingUserTile({required this.pending, required this.service});
-  final AdminPendingUser pending;
-  final AdminDashboardService service;
+  final SectionService service;
 
   @override
   Widget build(BuildContext context) {
-    final user = pending.user;
-    return ListTile(
-      leading: CircleAvatar(
-        child: Text(
-          user.fullName.isEmpty ? '?' : user.fullName[0].toUpperCase(),
-        ),
-      ),
-      title: Text(user.fullName.isEmpty ? user.email : user.fullName),
-      subtitle: Text(
-        '${user.email} · ${user.role} · ${_dateLabel(user.createdAt)}',
-      ),
-      isThreeLine: true,
-      trailing: Wrap(
-        spacing: 4,
-        children: [
-          IconButton(
-            tooltip: 'Approve account',
-            onPressed: () async {
-              await service.approveUser(pending.documentId);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Account approved.')),
-                );
-              }
-            },
-            icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+    return StreamBuilder<List<SectionModel>>(
+      stream: service.watchActiveSections(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _LoadingState();
+        }
+        if (snapshot.hasError) {
+          return const _ErrorState(message: 'Unable to load section capacity.');
+        }
+
+        final sections = [...snapshot.data ?? const <SectionModel>[]]
+          ..sort((a, b) => _capacityRatio(b).compareTo(_capacityRatio(a)));
+        final visibleSections = sections.take(5).toList();
+        if (visibleSections.isEmpty) {
+          return const _EmptyState(message: 'No active sections found.');
+        }
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: visibleSections
+                .map((section) => _SectionCapacityTile(section: section))
+                .toList(),
           ),
-          IconButton(
-            tooltip: 'Reject or review account',
-            onPressed: () => _reject(context),
-            icon: const Icon(Icons.rate_review_outlined),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Future<void> _reject(BuildContext context) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reject account'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Reason',
-            hintText: 'Required for review',
+  static double _capacityRatio(SectionModel section) {
+    if (section.maxActiveBorrowQuantity < 1) return 0;
+    return section.currentActiveBorrowQuantity /
+        section.maxActiveBorrowQuantity;
+  }
+}
+
+class _SectionCapacityTile extends StatelessWidget {
+  const _SectionCapacityTile({required this.section});
+
+  final SectionModel section;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final limit = section.maxActiveBorrowQuantity;
+    final current = section.currentActiveBorrowQuantity;
+    final ratio = limit < 1 ? 0.0 : (current / limit).clamp(0.0, 1.0);
+    final isFull = current >= limit && limit > 0;
+    final isNearLimit = ratio >= 0.8;
+    final statusColor = isFull
+        ? colors.error
+        : isNearLimit
+        ? Colors.orange.shade700
+        : colors.primary;
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: statusColor.withValues(alpha: 0.12),
+        child: Icon(Icons.groups_outlined, color: statusColor),
+      ),
+      title: Text(
+        section.displayName,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 7),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: ratio,
+            minHeight: 7,
+            backgroundColor: colors.surfaceContainerHighest,
+            color: statusColor,
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      ),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            '$current/$limit',
+            style: TextStyle(color: statusColor, fontWeight: FontWeight.w800),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Reject'),
+          Text(
+            isFull
+                ? 'Full'
+                : isNearLimit
+                ? 'Near limit'
+                : 'Available',
+            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11),
           ),
         ],
       ),
     );
-    controller.dispose();
-    if (reason == null || reason.isEmpty) return;
-    await service.rejectUser(pending.documentId, reason);
   }
 }
 

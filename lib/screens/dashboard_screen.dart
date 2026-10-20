@@ -4,7 +4,9 @@ import '../models/account_role.dart';
 import '../services/auth_service.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/borrower_navigation_bar.dart';
+import '../widgets/borrower_notifications_button.dart';
 import '../widgets/custodian_sidebar.dart';
+import '../widgets/custodian_notifications_button.dart';
 import 'admin_dashboard_screen.dart';
 import 'borrower_dashboard_screen.dart';
 import 'custodian_dashboard_screen.dart';
@@ -22,16 +24,21 @@ class DashboardScreen extends StatelessWidget {
         automaticallyImplyLeading: !isBorrower,
         title: const Text('Dashboard'),
         actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.notifications_none),
-          ),
-          if (isBorrower)
+          if (isBorrower) ...[
+            const BorrowerNotificationsButton(),
             IconButton(
               tooltip: 'Sign out',
               onPressed: () => _signOut(context),
               icon: const Icon(Icons.logout),
             ),
+          ] else if (role == AccountRole.propertyCustodian) ...[
+            const CustodianNotificationsButton(),
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: () => _signOut(context),
+              icon: const Icon(Icons.logout),
+            ),
+          ],
         ],
       ),
       drawer: isBorrower
@@ -57,14 +64,17 @@ class DashboardScreen extends StatelessWidget {
     void navigate(String label) {
       if (mobile) Navigator.pop(context);
       final route = switch (label) {
-        'Learning Resources' => '/custodian-resources',
+        'Learning Resources' =>
+          role == AccountRole.ictCoordinator
+              ? '/admin-resource-monitoring'
+              : '/custodian-resources',
+        'Borrowing Monitor' => '/admin-borrowing-monitor',
         'Borrowed Inventory' => '/custodian-borrow-requests',
-        'Borrow Requests' => '/custodian-borrow-requests',
         'Return Verification' => '/custodian-return-verification',
         'Reports' =>
           role == AccountRole.propertyCustodian
               ? '/custodian-reports'
-              : '/custodian-reports',
+              : '/admin-reports',
         'User Management' => '/admin-users',
         'Sections' => '/admin-sections',
         'System Logs' => '/admin-logs',
@@ -139,14 +149,17 @@ class _ManagementShell extends StatelessWidget {
   Widget _desktopSidebar(BuildContext context) {
     void navigate(String label) {
       final route = switch (label) {
-        'Learning Resources' => '/custodian-resources',
+        'Learning Resources' =>
+          role == AccountRole.ictCoordinator
+              ? '/admin-resource-monitoring'
+              : '/custodian-resources',
+        'Borrowing Monitor' => '/admin-borrowing-monitor',
         'Borrowed Inventory' => '/custodian-borrow-requests',
-        'Borrow Requests' => '/custodian-borrow-requests',
         'Return Verification' => '/custodian-return-verification',
         'Reports' =>
           role == AccountRole.propertyCustodian
               ? '/custodian-reports'
-              : '/custodian-reports',
+              : '/admin-reports',
         'User Management' => '/admin-users',
         'Sections' => '/admin-sections',
         'System Logs' => '/admin-logs',

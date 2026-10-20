@@ -19,6 +19,7 @@ class _AdminSectionsScreenState extends State<AdminSectionsScreen> {
   final _searchController = TextEditingController();
   String _sortBy = 'grade';
   bool _ascending = true;
+  int _displayLimit = 10;
 
   @override
   void dispose() {
@@ -682,6 +683,9 @@ class _AdminSectionsScreenState extends State<AdminSectionsScreen> {
           }
           final sections = snapshot.data!;
           final visibleSections = _visibleSections(sections);
+          final displayedSections = _displayLimit == 0
+              ? visibleSections
+              : visibleSections.take(_displayLimit).toList();
           if (sections.isEmpty) {
             return _EmptySections(onAdd: _edit);
           }
@@ -749,22 +753,46 @@ class _AdminSectionsScreenState extends State<AdminSectionsScreen> {
                   horizontal: 16,
                   vertical: 4,
                 ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '${visibleSections.length} of ${sections.length} section(s)',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      displayedSections.length == visibleSections.length
+                          ? '${visibleSections.length} section(s)'
+                          : 'Showing ${displayedSections.length} of '
+                                '${visibleSections.length} section(s)',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const Spacer(),
+                    const Text('Show'),
+                    const SizedBox(width: 6),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: _displayLimit,
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _displayLimit = value);
+                          }
+                        },
+                        items: const [
+                          DropdownMenuItem(value: 10, child: Text('10')),
+                          DropdownMenuItem(value: 25, child: Text('25')),
+                          DropdownMenuItem(value: 50, child: Text('50')),
+                          DropdownMenuItem(value: 100, child: Text('100')),
+                          DropdownMenuItem(value: 0, child: Text('All')),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
-                child: visibleSections.isEmpty
+                child: displayedSections.isEmpty
                     ? const Center(child: Text('No matching sections found.'))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                        itemCount: visibleSections.length,
+                        itemCount: displayedSections.length,
                         itemBuilder: (context, index) {
-                          final section = visibleSections[index];
+                          final section = displayedSections[index];
                           final limit = section.maxActiveBorrowQuantity;
                           final usage = section.currentActiveBorrowQuantity;
                           final progress = limit > 0

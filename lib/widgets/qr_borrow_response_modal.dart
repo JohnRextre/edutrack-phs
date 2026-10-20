@@ -128,7 +128,7 @@ class _QrBorrowResponseSheet extends StatelessWidget {
               FilledButton.icon(
                 onPressed: isAvailable ? onProceed : null,
                 icon: const Icon(Icons.arrow_forward),
-                label: const Text('Proceed to Borrow Request'),
+                label: const Text('Proceed to Borrow'),
               ),
             ],
           ),

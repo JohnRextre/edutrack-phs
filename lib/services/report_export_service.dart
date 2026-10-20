@@ -6,6 +6,8 @@ import 'package:share_plus/share_plus.dart';
 
 import 'analytics_service.dart';
 import 'admin_dashboard_service.dart';
+import '../models/section_model.dart';
+import 'package:printing/printing.dart';
 
 class ReportExportService {
   Future<void> exportSystemReport({
@@ -25,7 +27,6 @@ class ReportExportService {
             pw.Text('Generated Date: ${DateTime.now().toLocal()}'),
             pw.SizedBox(height: 18),
             pw.Text('Total Users: ${metrics.totalUsers}'),
-            pw.Text('Pending User Approvals: ${metrics.pendingApprovals}'),
             pw.Text('ICT Assets: ${metrics.ictAssets}'),
             pw.Text('Maintenance Items: ${metrics.maintenanceItems}'),
             pw.Text('Active Borrowings: ${metrics.activeBorrowings}'),
@@ -48,6 +49,84 @@ class ReportExportService {
         text: 'EduTrack PHS system audit report',
       ),
     );
+  }
+
+  Future<void> downloadAdminReport({
+    required AdminDashboardMetrics metrics,
+    required List<SectionModel> sections,
+  }) async {
+    final bytes = await _buildAdminPdf(metrics: metrics, sections: sections);
+    final file = await _writeTempFile(
+      filename:
+          'edutrack_phs_system_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      content: bytes,
+    );
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        text: 'EduTrack PHS system report',
+      ),
+    );
+  }
+
+  Future<void> printAdminReport({
+    required AdminDashboardMetrics metrics,
+    required List<SectionModel> sections,
+  }) async {
+    final bytes = await _buildAdminPdf(metrics: metrics, sections: sections);
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
+  }
+
+  Future<Uint8List> _buildAdminPdf({
+    required AdminDashboardMetrics metrics,
+    required List<SectionModel> sections,
+  }) async {
+    final pdf = pw.Document();
+    final activeSections = sections.where((section) => section.isActive).length;
+    final capacity = sections.fold<int>(
+      0,
+      (total, section) => total + section.maxActiveBorrowQuantity,
+    );
+    final usage = sections.fold<int>(
+      0,
+      (total, section) => total + section.currentActiveBorrowQuantity,
+    );
+    pdf.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Text(
+            'EduTrack PHS - System Report',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text('Generated: ${DateTime.now().toLocal()}'),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'System Overview',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text('Accounts: ${metrics.totalUsers}'),
+          pw.Text('Sections: ${sections.length} ($activeSections active)'),
+          pw.Text('ICT Resources: ${metrics.ictAssets}'),
+          pw.Text('Active Borrowings: ${metrics.activeBorrowings}'),
+          pw.Text('System Alerts: ${metrics.maintenanceItems}'),
+          pw.SizedBox(height: 14),
+          pw.Text(
+            'Section Capacity',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text('Slots in use: $usage of $capacity'),
+          pw.SizedBox(height: 14),
+          pw.Text(
+            'Accounts by Role',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          for (final entry in metrics.usersByRole.entries)
+            pw.Text('${entry.key}: ${entry.value}'),
+        ],
+      ),
+    );
+    return pdf.save();
   }
 
   Future<void> exportSummary({

@@ -148,6 +148,12 @@ class UserService {
         'isApproved': isApproved,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      await AuthService.recordAudit(
+        userId: user.uid,
+        actionType: 'account_created',
+        title: 'Created an account',
+        description: 'Your EduTrack account was created by an administrator.',
+      );
 
       if (role == AccountRole.ictCoordinator) {
         await _firestore.doc(AuthService.configDocumentPath).set({
@@ -269,7 +275,11 @@ class UserService {
     ]) {
       if (data.containsKey(key)) {
         final value = data[key]?.toString().trim() ?? '';
-        if (value.isEmpty && key != 'department') {
+        if (value.isEmpty &&
+            key != 'department' &&
+            key != 'gradeSection' &&
+            key != 'sectionId' &&
+            key != 'sectionName') {
           throw FirebaseException(
             plugin: 'cloud_firestore',
             code: 'invalid-profile',
@@ -384,6 +394,12 @@ class UserService {
         );
       }
       await user.updatePassword(newPassword);
+      await AuthService.recordAudit(
+        userId: user.uid,
+        actionType: 'password_changed',
+        title: 'Changed password',
+        description: 'Your account password was changed.',
+      );
     } on FirebaseAuthException catch (error) {
       if (error.code == 'wrong-password' ||
           error.code == 'invalid-credential' ||

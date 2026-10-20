@@ -87,8 +87,10 @@ class _ReportsAnalyticsScreenState extends State<ReportsAnalyticsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(
         title: const Text('Reports & Analytics'),
+        backgroundColor: theme.colorScheme.surfaceContainerLowest,
         actions: [
           PopupMenuButton<String>(
             onSelected: _exportReport,
@@ -140,6 +142,13 @@ class _ReportsAnalyticsScreenState extends State<ReportsAnalyticsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _ReportHeader(
+                    rangeLabel: _selectedPreset == AnalyticsDatePreset.custom
+                        ? 'Custom date range'
+                        : _presetLabel(_selectedPreset),
+                    onRefresh: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 18),
                   _DateRangeSelector(
                     selected: _selectedPreset,
                     onPresetChanged: (preset) {
@@ -160,82 +169,90 @@ class _ReportsAnalyticsScreenState extends State<ReportsAnalyticsScreen> {
                           'No borrow activity was found for the selected range.',
                     )
                   else ...[
+                    _KpiStrip(
+                      items: [
+                        _KpiData(
+                          'Borrowed',
+                          '${summary.totalBorrowings}',
+                          Icons.swap_horiz_rounded,
+                          Colors.blue,
+                        ),
+                        _KpiData(
+                          'Active borrowers',
+                          '${summary.activeBorrowers}',
+                          Icons.people_outline_rounded,
+                          Colors.indigo,
+                        ),
+                        _KpiData(
+                          'On-time returns',
+                          '${summary.onTimeReturnRate.toStringAsFixed(1)}%',
+                          Icons.check_circle_outline_rounded,
+                          Colors.green,
+                        ),
+                        _KpiData(
+                          'Late returns',
+                          '${summary.overdueRate.toStringAsFixed(1)}%',
+                          Icons.warning_amber_rounded,
+                          Colors.orange,
+                        ),
+                        _KpiData(
+                          'Damaged / replaced',
+                          '${summary.damagedOrReplacedCount}',
+                          Icons.build_circle_outlined,
+                          Colors.red,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Operational analytics',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final crossAxisCount = constraints.maxWidth < 700
-                            ? 1
-                            : 2;
-                        return GridView.count(
-                          crossAxisCount: crossAxisCount,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: crossAxisCount == 1 ? 1.8 : 1.6,
+                        final categoryPanel = _AnalyticsPanel(
+                          title: 'Category share',
+                          subtitle: 'Borrowing demand by resource type',
+                          icon: Icons.pie_chart_outline_rounded,
+                          child: _CategoryBreakdownCard(
+                            distribution: summary.categoryDistribution,
+                          ),
+                        );
+                        final returnPanel = _AnalyticsPanel(
+                          title: 'Return outcomes',
+                          subtitle: 'How issued items were resolved',
+                          icon: Icons.assignment_turned_in_outlined,
+                          child: _ReturnTypeBreakdownCard(
+                            breakdown: summary.resolutionBreakdown,
+                          ),
+                        );
+                        if (constraints.maxWidth < 760) {
+                          return Column(
+                            children: [
+                              categoryPanel,
+                              const SizedBox(height: 12),
+                              returnPanel,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _MetricCard(
-                              label: 'Total Borrowed Items',
-                              value: summary.totalBorrowings.toString(),
-                              icon: Icons.library_books_outlined,
-                              color: Colors.blue,
-                            ),
-                            _MetricCard(
-                              label: 'On-Time Return Rate',
-                              value:
-                                  '${summary.onTimeReturnRate.toStringAsFixed(1)}%',
-                              icon: Icons.check_circle_outline,
-                              color: Colors.green,
-                            ),
-                            _MetricCard(
-                              label: 'Late Return Rate',
-                              value:
-                                  '${summary.overdueRate.toStringAsFixed(1)}%',
-                              icon: Icons.warning_amber_rounded,
-                              color: Colors.red,
-                            ),
-                            _MetricCard(
-                              label: 'Damaged / Replaced Items',
-                              value: summary.damagedOrReplacedCount.toString(),
-                              icon: Icons.build_circle_outlined,
-                              color: Colors.orange,
-                            ),
-                            _MetricCard(
-                              label: 'Active Borrowers',
-                              value: summary.activeBorrowers.toString(),
-                              icon: Icons.people_alt_outlined,
-                              color: Colors.indigo,
-                            ),
+                            Expanded(child: categoryPanel),
+                            const SizedBox(width: 12),
+                            Expanded(child: returnPanel),
                           ],
                         );
                       },
                     ),
                     const SizedBox(height: 22),
                     Text(
-                      'Category Share',
+                      'Most requested resources',
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _CategoryBreakdownCard(
-                      distribution: summary.categoryDistribution,
-                    ),
-                    const SizedBox(height: 22),
-                    Text(
-                      'Return Type Summary',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _ReturnTypeBreakdownCard(
-                      breakdown: summary.resolutionBreakdown,
-                    ),
-                    const SizedBox(height: 22),
-                    Text(
-                      'Top Borrowed Resources',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -317,6 +334,170 @@ class _DateRangeSelector extends StatelessWidget {
   }
 }
 
+class _ReportHeader extends StatelessWidget {
+  const _ReportHeader({required this.rangeLabel, required this.onRefresh});
+
+  final String rangeLabel;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.insights_rounded,
+              color: colors.primary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Borrowing performance',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Live custodian view  •  $rangeLabel',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Refresh report',
+            onPressed: onRefresh,
+            style: IconButton.styleFrom(
+              foregroundColor: colors.primary,
+              backgroundColor: colors.surface.withValues(alpha: 0.7),
+            ),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KpiData {
+  const _KpiData(this.label, this.value, this.icon, this.color);
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+}
+
+class _KpiStrip extends StatelessWidget {
+  const _KpiStrip({required this.items});
+
+  final List<_KpiData> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        for (final item in items)
+          SizedBox(
+            width: 178,
+            child: _MetricCard(
+              label: item.label,
+              value: item.value,
+              icon: item.icon,
+              color: item.color,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AnalyticsPanel extends StatelessWidget {
+  const _AnalyticsPanel({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: colors.primary, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+String _presetLabel(AnalyticsDatePreset preset) {
+  switch (preset) {
+    case AnalyticsDatePreset.thisWeek:
+      return 'This week';
+    case AnalyticsDatePreset.thisMonth:
+      return 'This month';
+    case AnalyticsDatePreset.thisSemester:
+      return 'This semester';
+    case AnalyticsDatePreset.custom:
+      return 'Custom date range';
+  }
+}
+
 class _MetricCard extends StatelessWidget {
   const _MetricCard({
     required this.label,
@@ -334,30 +515,38 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
+      elevation: 0,
+      color: color.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color.withValues(alpha: 0.18)),
+      ),
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(12),
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Icon(icon, color: color, size: 28),
-                const Icon(Icons.trending_up_outlined),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

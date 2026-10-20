@@ -12,16 +12,16 @@ import '../../services/borrow_service.dart';
 import '../../models/section_model.dart';
 import '../../services/section_service.dart';
 
-class BorrowRequestScreen extends StatefulWidget {
-  const BorrowRequestScreen({super.key, required this.resource});
+class BorrowItemScreen extends StatefulWidget {
+  const BorrowItemScreen({super.key, required this.resource});
 
   final ResourceModel resource;
 
   @override
-  State<BorrowRequestScreen> createState() => _BorrowRequestScreenState();
+  State<BorrowItemScreen> createState() => _BorrowItemScreenState();
 }
 
-class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
+class _BorrowItemScreenState extends State<BorrowItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _borrowService = BorrowService();
   final _purposeController = TextEditingController();
@@ -154,9 +154,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
       if (mounted) {
         setState(() {});
         if (_hasActiveStudentBorrow) {
-          _showSnackBar(
-            'You already have an active borrow request for this item.',
-          );
+          _showSnackBar('You already have an active borrow for this item.');
         }
       }
     }
@@ -278,16 +276,13 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
 
   Future<void> _submit() async {
     if (_userId == null || _userName == null || _userRole == null) {
-      _showSnackBar(
-        'Please sign in to submit a borrow request.',
-        isError: true,
-      );
+      _showSnackBar('Please sign in to borrow this item.', isError: true);
       return;
     }
 
     if (_userRole == 'student' && _hasActiveStudentBorrow) {
       _showSnackBar(
-        'You already have an active borrow request for this item. Please return your existing item before borrowing it again.',
+        'You already have an active borrow for this item. Please return your existing item before borrowing it again.',
         isError: true,
       );
       return;
@@ -355,7 +350,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Borrow Request')),
+      appBar: AppBar(title: const Text('Borrow Item')),
       body: _loadingUser
           ? const Center(child: CircularProgressIndicator())
           : _userId == null
@@ -363,7 +358,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Text(
-                  'Please sign in as a student or teacher to request a borrow.',
+                  'Please sign in as a student or teacher to borrow an item.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -401,7 +396,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
-                                      'You already have an active borrow request for this item.',
+                                      'You already have an active borrow for this item.',
                                       style: TextStyle(
                                         color: Colors.amber.shade900,
                                         fontWeight: FontWeight.w600,
@@ -415,7 +410,7 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                           _ResourceOverviewCard(resource: resource),
                           const SizedBox(height: 24),
                           Text(
-                            'Request Details',
+                            'Borrow Details',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -546,8 +541,8 @@ class _BorrowRequestScreenState extends State<BorrowRequestScreen> {
                                 ? 'Submitting...'
                                 : _userRole == 'student' &&
                                       _hasActiveStudentBorrow
-                                ? 'Already Borrowed / Requested'
-                                : 'Submit Borrow Request',
+                                ? 'Already Borrowed'
+                                : 'Borrow Item',
                           ),
                         ),
                       ),
@@ -849,7 +844,7 @@ class _QuantityField extends StatelessWidget {
         border: const OutlineInputBorder(),
         helperText: isTeacher
             ? 'Enter 1-$maxQuantity. Teachers may request up to $maxBorrowLimit per transaction'
-            : 'Students are limited to 1 item per request',
+            : 'Students are limited to 1 item per borrow',
         errorText: errorText,
       ),
       child: isTeacher

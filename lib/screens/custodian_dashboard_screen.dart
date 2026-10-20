@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
+import '../services/analytics_service.dart';
 import '../services/borrow_service.dart';
 import '../services/dashboard_service.dart';
+import '../services/report_export_service.dart';
 import '../widgets/borrow_status_badge.dart';
 import '../widgets/borrow_transaction_details_modal.dart';
 import '../widgets/return_verification_details.dart';
@@ -20,7 +22,10 @@ class CustodianDashboardScreen extends StatefulWidget {
 class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
   final DashboardService _dashboardService = DashboardService();
   final BorrowService _borrowService = BorrowService();
+  final AnalyticsService _analyticsService = AnalyticsService();
+  final ReportExportService _reportExportService = ReportExportService();
   bool _isProcessing = false;
+  bool _isExporting = false;
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -57,14 +62,23 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
     }
   }
 
-  void _exportReport(DashboardMetrics metrics) {
-    final summary =
-        'Total: ${DashboardService.formatCount(metrics.totalResources)} | '
-        'Available: ${DashboardService.formatCount(metrics.available)} | '
-        'Borrowed: ${DashboardService.formatCount(metrics.borrowed)} | '
-        'Returns: ${DashboardService.formatCount(metrics.pendingReturns)} | '
-        'Overdue: ${DashboardService.formatCount(metrics.overdue)}';
-    _showSnackBar('Report summary — $summary');
+  Future<void> _exportReport() async {
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
+
+    try {
+      final summary = await _analyticsService.fetchSummary();
+      await _reportExportService.exportSummary(summary: summary, format: 'PDF');
+      if (mounted) {
+        _showSnackBar('PDF report is ready to share.');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar('Unable to export report: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
   }
 
   Future<void> _openReturnDetails(
@@ -180,10 +194,10 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
         StreamBuilder<DashboardMetrics>(
           stream: _dashboardService.watchMetrics(),
           builder: (context, snapshot) {
-            final metrics = snapshot.data ?? DashboardMetrics.empty;
             return _PageHeader(
               subtitle: DashboardService.summarySubtitle(),
-              onExport: snapshot.hasData ? () => _exportReport(metrics) : null,
+              isExporting: _isExporting,
+              onExport: snapshot.hasData ? _exportReport : null,
             );
           },
         ),
@@ -269,41 +283,68 @@ class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
 }
 
 class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.subtitle, required this.onExport});
+  const _PageHeader({
+    required this.subtitle,
+    required this.onExport,
+    required this.isExporting,
+  });
 
   final String subtitle;
   final VoidCallback? onExport;
+  final bool isExporting;
 
   @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Expanded(
-        child: Column(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      final heading = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Dashboard Overview',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            maxLines: compact ? 2 : null,
+            overflow: compact ? TextOverflow.ellipsis : null,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+      final exportButton = FilledButton.icon(
+        onPressed: isExporting ? null : onExport,
+        icon: isExporting
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.file_download_outlined),
+        label: Text(isExporting ? 'Preparing...' : 'Export PDF'),
+      );
+
+      if (compact) {
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Dashboard Overview',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-      FilledButton.icon(
-        onPressed: onExport,
-        icon: const Icon(Icons.file_download_outlined),
-        label: const Text('Export Report'),
-      ),
-    ],
+          children: [heading, const SizedBox(height: 12), exportButton],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: heading),
+          const SizedBox(width: 12),
+          exportButton,
+        ],
+      );
+    },
   );
 }
 
@@ -535,60 +576,82 @@ class _BorrowedInventoryRow extends StatelessWidget {
   final BorrowTransaction transaction;
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () =>
-          BorrowTransactionDetailsModal.show(context, transaction: transaction),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              child: Text(
-                DashboardService.initialsFromName(transaction.userName),
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 600;
+      final borrower = Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            child: Text(
+              DashboardService.initialsFromName(transaction.userName),
+              style: Theme.of(context).textTheme.labelSmall,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    transaction.userName,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  Text(
-                    transaction.userRole == 'teacher' ? 'Teacher' : 'Student',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  transaction.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  transaction.userRole == 'teacher' ? 'Teacher' : 'Student',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                transaction.resourceName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+          ),
+        ],
+      );
+      final details = Row(
+        children: [
+          Expanded(
+            child: Text(
+              transaction.resourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            Expanded(
-              child: Text(
-                DashboardService.formatDisplayDate(transaction.borrowDate),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            BorrowStatusBadge(transaction: transaction, compact: true),
-          ],
+          ),
+          const SizedBox(width: 8),
+          Text(
+            DashboardService.formatDisplayDate(transaction.borrowDate),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(width: 8),
+          BorrowStatusBadge(transaction: transaction, compact: true),
+        ],
+      );
+
+      return InkWell(
+        onTap: () => BorrowTransactionDetailsModal.show(
+          context,
+          transaction: transaction,
         ),
-      ),
-    );
-  }
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [borrower, const SizedBox(height: 8), details],
+                )
+              : Row(
+                  children: [
+                    Expanded(flex: 2, child: borrower),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 3, child: details),
+                  ],
+                ),
+        ),
+      );
+    },
+  );
 }
 
 class _BorrowingInsights extends StatelessWidget {
@@ -826,105 +889,132 @@ class _ReturnRow extends StatelessWidget {
   final VoidCallback onAssessDamage;
 
   @override
-  Widget build(BuildContext context) {
-    final overdue = isReturnOverdue(transaction);
-    final conditionNotes = DashboardService.conditionNotes(transaction);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onVerifyReturn,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(14),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final overdue = isReturnOverdue(transaction);
+      final conditionNotes = DashboardService.conditionNotes(transaction);
+      final compact = constraints.maxWidth < 520;
+      final actions = Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FilledButton.tonal(
+            onPressed: onVerifyReturn,
+            child: Text(compact ? 'Verify' : 'Verify Return'),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.assignment_return_outlined,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      transaction.resourceName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    Text(
-                      DashboardService.borrowerSubtitle(
-                        transaction,
-                        section: section,
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        ReturnTypeBadge(
-                          returnType: transaction.returnType,
-                          compact: true,
-                        ),
-                        if (overdue)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'Overdue',
-                              style: TextStyle(
-                                color: Colors.red.shade800,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Condition: $conditionNotes',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+          TextButton(
+            onPressed: onAssessDamage,
+            child: Text(compact ? 'Assess' : 'Assess Damage'),
+          ),
+        ],
+      );
+
+      final content = Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              transaction.resourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              DashboardService.borrowerSubtitle(transaction, section: section),
+              maxLines: compact ? 2 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ReturnTypeBadge(
+                  returnType: transaction.returnType,
+                  compact: true,
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: onVerifyReturn,
-                    child: const Text('Verify Return'),
+                if (overdue)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Overdue',
+                      style: TextStyle(
+                        color: Colors.red.shade800,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
                   ),
-                  TextButton(
-                    onPressed: onAssessDamage,
-                    child: const Text('Assess Damage'),
-                  ),
-                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Condition: $conditionNotes',
+              maxLines: compact ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onVerifyReturn,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
               ),
-            ],
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.assignment_return_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          content,
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Align(alignment: Alignment.centerRight, child: actions),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.assignment_return_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      content,
+                      const SizedBox(width: 8),
+                      actions,
+                    ],
+                  ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class _CategoryAndAddResource extends StatelessWidget {

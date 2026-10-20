@@ -3,13 +3,11 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/resource_item.dart';
-import '../models/user_model.dart';
 
 class AdminDashboardMetrics {
   const AdminDashboardMetrics({
     required this.totalUsers,
     required this.usersByRole,
-    required this.pendingApprovals,
     required this.ictAssets,
     required this.maintenanceItems,
     required this.activeBorrowings,
@@ -17,17 +15,9 @@ class AdminDashboardMetrics {
 
   final int totalUsers;
   final Map<String, int> usersByRole;
-  final int pendingApprovals;
   final int ictAssets;
   final int maintenanceItems;
   final int activeBorrowings;
-}
-
-class AdminPendingUser {
-  const AdminPendingUser({required this.user, required this.documentId});
-
-  final UserModel user;
-  final String documentId;
 }
 
 class AdminAuditEvent {
@@ -77,16 +67,11 @@ class AdminDashboardService {
         'custodian': 0,
         'admin': 0,
       };
-      var pendingApprovals = 0;
       for (final document in users) {
         final data = document.data();
         final role = _normalizedRole(data['role']);
         if (roleCounts.containsKey(role)) {
           roleCounts[role] = roleCounts[role]! + 1;
-        }
-        if (data['isApproved'] == false ||
-            data['status']?.toString().toLowerCase() == 'pending_approval') {
-          pendingApprovals++;
         }
       }
       final resources = resourcesSnapshot!.docs.map(
@@ -105,7 +90,6 @@ class AdminDashboardService {
         AdminDashboardMetrics(
           totalUsers: users.length,
           usersByRole: roleCounts,
-          pendingApprovals: pendingApprovals,
           ictAssets: ictAssets,
           maintenanceItems: maintenanceItems,
           activeBorrowings: activeBorrowings,
@@ -145,30 +129,6 @@ class AdminDashboardService {
     return controller.stream;
   }
 
-  Stream<List<AdminPendingUser>> watchPendingUsers({int limit = 5}) {
-    return _firestore.collection(usersCollection).snapshots().map((snapshot) {
-      final pending =
-          snapshot.docs.where((document) {
-            final data = document.data();
-            return data['isApproved'] == false ||
-                data['status']?.toString().toLowerCase() == 'pending_approval';
-          }).toList()..sort(
-            (a, b) => _dateFrom(
-              b.data()['createdAt'],
-            ).compareTo(_dateFrom(a.data()['createdAt'])),
-          );
-      return pending
-          .take(limit)
-          .map(
-            (document) => AdminPendingUser(
-              user: UserModel.fromMap(document.data(), id: document.id),
-              documentId: document.id,
-            ),
-          )
-          .toList();
-    });
-  }
-
   Stream<List<AdminAuditEvent>> watchAuditEvents({int limit = 5}) {
     return _firestore
         .collection(auditLogsCollection)
@@ -192,23 +152,6 @@ class AdminDashboardService {
             );
           }).toList(),
         );
-  }
-
-  Future<void> approveUser(String documentId) {
-    return _firestore.collection(usersCollection).doc(documentId).update({
-      'isApproved': true,
-      'status': 'Active',
-      'approvedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  Future<void> rejectUser(String documentId, String reason) {
-    return _firestore.collection(usersCollection).doc(documentId).update({
-      'isApproved': false,
-      'status': 'rejected',
-      'rejectionReason': reason.trim(),
-      'reviewedAt': FieldValue.serverTimestamp(),
-    });
   }
 
   static String _normalizedRole(Object? value) {
@@ -242,9 +185,6 @@ class AdminDashboardService {
         condition == 'for_replacement' ||
         resource.damagedQuantity > 0;
   }
-
-  static DateTime _dateFrom(Object? value) =>
-      _dateFromNullable(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   static DateTime? _dateFromNullable(Object? value) {
     if (value is Timestamp) return value.toDate();

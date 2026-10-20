@@ -24,6 +24,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
   String _selectedMainCategory = ResourceTaxonomy.filterAll;
   String _selectedSubCategory = ResourceTaxonomy.filterAll;
   String _selectedItemType = ResourceTaxonomy.filterAll;
+  int _displayLimit = 10;
 
   @override
   void dispose() {
@@ -745,6 +746,9 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
 
                 final allResources = snapshot.data ?? const [];
                 final filteredResources = _filterResources(allResources);
+                final visibleResources = _displayLimit == 0
+                    ? filteredResources
+                    : filteredResources.take(_displayLimit).toList();
 
                 return ListView(
                   padding: const EdgeInsets.all(16),
@@ -955,6 +959,49 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            visibleResources.length == filteredResources.length
+                                ? 'Showing ${filteredResources.length}'
+                                : 'Showing ${visibleResources.length} of '
+                                      '${filteredResources.length}',
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Show'),
+                        const SizedBox(width: 6),
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: _displayLimit,
+                            isDense: true,
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _displayLimit = value);
+                              }
+                            },
+                            items: const [
+                              DropdownMenuItem(value: 10, child: Text('10')),
+                              DropdownMenuItem(value: 25, child: Text('25')),
+                              DropdownMenuItem(value: 50, child: Text('50')),
+                              DropdownMenuItem(value: 100, child: Text('100')),
+                              DropdownMenuItem(value: 0, child: Text('All')),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
                     if (filteredResources.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 32),
@@ -969,7 +1016,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                       GridView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: filteredResources.length,
+                        itemCount: visibleResources.length,
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
@@ -978,7 +1025,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                               childAspectRatio: 0.62,
                             ),
                         itemBuilder: (context, index) {
-                          final resource = filteredResources[index];
+                          final resource = visibleResources[index];
                           return _InventoryGridCard(
                             resource: resource,
                             onEdit: () => _openAddEditScreen(resource),
@@ -988,7 +1035,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                         },
                       )
                     else
-                      ...filteredResources.map(
+                      ...visibleResources.map(
                         (resource) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _InventoryCard(

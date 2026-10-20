@@ -214,7 +214,7 @@ class _Hero extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Text(
-              'Check available equipment, submit borrow requests, and verify returns with photo proof.',
+              'Check available equipment, borrow items automatically, and verify returns with photo proof.',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 height: 1.45,
                 color: colors.onSurfaceVariant,
@@ -304,10 +304,28 @@ class _FeaturesGrid extends StatelessWidget {
           SizedBox(
             width: width,
             child: const _InfoCard(
-              icon: Icons.assignment_outlined,
-              title: 'Simple Borrowing Process',
+              icon: Icons.qr_code_scanner_outlined,
+              title: 'Scan to Borrow',
               body:
-                  'Submit request forms online and track your active borrowings with due-date alerts.',
+                  'Scan an item QR code, review its details, and borrow it through the automated flow.',
+            ),
+          ),
+          SizedBox(
+            width: width,
+            child: const _InfoCard(
+              icon: Icons.groups_outlined,
+              title: 'Section Management',
+              body:
+                  'Admins manage sections and borrowing limits so resources can be assigned responsibly.',
+            ),
+          ),
+          SizedBox(
+            width: width,
+            child: const _InfoCard(
+              icon: Icons.person_add_alt_1_outlined,
+              title: 'Guided Account Setup',
+              body:
+                  'Create an account with your role and school details, then use your assigned section in the portal.',
             ),
           ),
           SizedBox(
@@ -343,7 +361,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.school_outlined,
               title: 'Students & Teachers',
               body:
-                  'Search resources, request items, track due dates, and upload return photos.',
+                  'Search resources, scan QR codes, borrow items, track due dates, and upload return photos.',
             ),
           ),
           SizedBox(
@@ -352,7 +370,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.inventory_outlined,
               title: 'Property Custodians',
               body:
-                  'Approve borrow requests, inspect return photo proof, and update stock counts.',
+                  'Monitor borrowings, inspect return photo proof, and update stock counts.',
             ),
           ),
           SizedBox(
@@ -361,7 +379,7 @@ class _RolesGrid extends StatelessWidget {
               icon: Icons.admin_panel_settings_outlined,
               title: 'ICT Coordinators / Admins',
               body:
-                  'Manage user accounts, set role permissions, and view activity logs.',
+                  'Manage accounts, create sections, set borrowing limits, and view system reports and activity logs.',
             ),
           ),
         ],

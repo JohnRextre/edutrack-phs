@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/borrow_transaction_model.dart';
 import '../services/borrow_service.dart';
-import '../services/qr_service.dart';
 import '../widgets/borrow_status_badge.dart';
-import '../widgets/qr_camera_scanner_screen.dart';
-import '../widgets/qr_return_response_modal.dart';
 import '../widgets/return_verification_details.dart';
 import 'custodian/return_verification_details_screen.dart';
 
@@ -52,63 +49,9 @@ class _CustodianReturnVerificationScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _showSnackBar(
-        accepted
-            ? 'Return accepted and stock restored.'
-            : 'Return rejected.',
+        accepted ? 'Return accepted and stock restored.' : 'Return rejected.',
       );
     });
-  }
-
-  Future<void> _lookupByQrPayload(String payload) async {
-    final itemCode = QrService.parseItemCodeFromPayload(payload);
-    if (itemCode == null) {
-      _showSnackBar('Invalid EduTrack QR code.', isError: true);
-      return;
-    }
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final transaction =
-          await _borrowService.findPendingReturnByResourceCode(itemCode);
-      if (!mounted) return;
-      Navigator.pop(context);
-
-      if (transaction == null) {
-        _showSnackBar(
-          "No pending return request found for item code '$itemCode'.",
-          isError: true,
-        );
-        return;
-      }
-
-      await showQrReturnResponseModal(
-        context: context,
-        transaction: transaction,
-        onReview: _openReturnDetails,
-      );
-    } catch (error) {
-      if (mounted) {
-        Navigator.pop(context);
-        _showSnackBar(
-          BorrowService.friendlyErrorMessage(error),
-          isError: true,
-        );
-      }
-    }
-  }
-
-  Future<void> _openQrLookupDialog() async {
-    final payload = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (_) => const QrCameraScannerScreen()),
-    );
-    if (!mounted || payload == null) return;
-    await _lookupByQrPayload(payload);
   }
 
   List<BorrowTransaction> _filterTransactions(
@@ -127,16 +70,7 @@ class _CustodianReturnVerificationScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Return Verification'),
-        actions: [
-          IconButton(
-            tooltip: 'QR Code Lookup',
-            onPressed: _openQrLookupDialog,
-            icon: const Icon(Icons.qr_code_scanner),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Return Verification')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -159,14 +93,6 @@ class _CustodianReturnVerificationScreenState
               onChanged: (_) => setState(() {}),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: OutlinedButton.icon(
-              onPressed: _openQrLookupDialog,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Verify via QR Camera'),
-            ),
-          ),
           const SizedBox(height: 8),
           Expanded(
             child: StreamBuilder<List<BorrowTransaction>>(
@@ -186,9 +112,7 @@ class _CustodianReturnVerificationScreenState
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final filtered = _filterTransactions(
-                  snapshot.data ?? const [],
-                );
+                final filtered = _filterTransactions(snapshot.data ?? const []);
 
                 if (filtered.isEmpty) {
                   return const Center(
@@ -268,9 +192,9 @@ class _PendingReturnCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 transaction.resourceCode,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
               ),
               const SizedBox(height: 8),
               Row(

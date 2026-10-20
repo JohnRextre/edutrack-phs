@@ -14,7 +14,7 @@ import '../widgets/borrower_qr_return_preview_modal.dart';
 import '../widgets/qr_borrow_response_modal.dart';
 import '../widgets/qr_camera_scanner_screen.dart';
 import '../widgets/return_type_selection_dialog.dart';
-import 'student/borrow_request_screen.dart';
+import 'student/borrow_item_screen.dart';
 import 'student/return_item_screen.dart';
 
 class BorrowerDashboardScreen extends StatelessWidget {
@@ -62,7 +62,7 @@ class BorrowerDashboardScreen extends StatelessWidget {
       await showQrBorrowResponseModal(
         context: context,
         resource: resource,
-        onProceed: (_) async => _openBorrowRequest(context, resource),
+        onProceed: (_) async => _openBorrowItem(context, resource),
       );
     } catch (error) {
       if (!context.mounted) return;
@@ -127,11 +127,9 @@ class BorrowerDashboardScreen extends StatelessWidget {
     }
   }
 
-  void _openBorrowRequest(BuildContext context, ResourceItem resource) {
+  void _openBorrowItem(BuildContext context, ResourceItem resource) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BorrowRequestScreen(resource: resource),
-      ),
+      MaterialPageRoute(builder: (_) => BorrowItemScreen(resource: resource)),
     );
   }
 
@@ -141,19 +139,16 @@ class BorrowerDashboardScreen extends StatelessWidget {
   ) async {
     final returnType = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => ReturnTypeSelectionDialog(
-        resourceName: transaction.resourceName,
-      ),
+      builder: (dialogContext) =>
+          ReturnTypeSelectionDialog(resourceName: transaction.resourceName),
     );
 
     if (returnType == null || !context.mounted) return;
 
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ReturnItemScreen(
-          transaction: transaction,
-          returnType: returnType,
-        ),
+        builder: (_) =>
+            ReturnItemScreen(transaction: transaction, returnType: returnType),
       ),
     );
   }

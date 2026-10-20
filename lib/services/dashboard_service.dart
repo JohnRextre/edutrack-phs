@@ -14,7 +14,6 @@ class DashboardMetrics {
     required this.totalResources,
     required this.available,
     required this.borrowed,
-    required this.pendingRequests,
     required this.pendingReturns,
     required this.overdue,
     required this.damaged,
@@ -24,7 +23,6 @@ class DashboardMetrics {
   final int totalResources;
   final int available;
   final int borrowed;
-  final int pendingRequests;
   final int pendingReturns;
   final int overdue;
   final int damaged;
@@ -34,7 +32,6 @@ class DashboardMetrics {
     totalResources: 0,
     available: 0,
     borrowed: 0,
-    pendingRequests: 0,
     pendingReturns: 0,
     overdue: 0,
     damaged: 0,
@@ -84,13 +81,6 @@ class DashboardService {
       _resourceService.watchResources(),
       _watchAllTransactions(),
       _computeMetrics,
-    );
-  }
-
-  /// Top [limit] pending borrow requests, newest first.
-  Stream<List<BorrowTransaction>> watchRecentPendingRequests({int limit = 3}) {
-    return _borrowService.getPendingRequests().map(
-      (requests) => requests.take(limit).toList(growable: false),
     );
   }
 
@@ -170,7 +160,6 @@ class DashboardService {
     final lost = _countLost(resources);
 
     var borrowed = 0;
-    var pendingRequests = 0;
     var pendingReturns = 0;
     var overdue = 0;
 
@@ -181,8 +170,6 @@ class DashboardService {
         if (transaction.expectedReturnDate.isBefore(now)) {
           overdue++;
         }
-      } else if (transaction.status == BorrowTransactionStatus.pending) {
-        pendingRequests++;
       } else if (transaction.status == BorrowTransactionStatus.returnPending) {
         pendingReturns++;
       }
@@ -192,7 +179,6 @@ class DashboardService {
       totalResources: totalResources,
       available: available,
       borrowed: borrowed,
-      pendingRequests: pendingRequests,
       pendingReturns: pendingReturns,
       overdue: overdue,
       damaged: damaged,

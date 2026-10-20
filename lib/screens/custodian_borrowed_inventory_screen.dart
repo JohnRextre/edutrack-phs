@@ -5,19 +5,16 @@ import '../services/borrow_service.dart';
 import '../widgets/borrow_status_badge.dart';
 
 /// Property Custodian screen for monitoring all active borrowed resources.
-class CustodianBorrowRequestsScreen extends StatefulWidget {
-  const CustodianBorrowRequestsScreen({super.key});
+class CustodianBorrowedInventoryScreen extends StatefulWidget {
+  const CustodianBorrowedInventoryScreen({super.key});
 
   @override
-  State<CustodianBorrowRequestsScreen> createState() =>
-      _CustodianBorrowRequestsScreenState();
+  State<CustodianBorrowedInventoryScreen> createState() =>
+      _CustodianBorrowedInventoryScreenState();
 }
 
-/// Alias for modern semantic naming
-typedef CustodianBorrowedInventoryScreen = CustodianBorrowRequestsScreen;
-
-class _CustodianBorrowRequestsScreenState
-    extends State<CustodianBorrowRequestsScreen> {
+class _CustodianBorrowedInventoryScreenState
+    extends State<CustodianBorrowedInventoryScreen> {
   final BorrowService _borrowService = BorrowService();
   final TextEditingController _searchController = TextEditingController();
 

@@ -219,6 +219,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
 
   UserRole? _selectedRoleFilter;
   AccountStatus? _statusFilter;
+  int _displayLimit = 10;
 
   @override
   void dispose() {
@@ -1355,6 +1356,9 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     .map(UserAccount.fromFirestore)
                     .toList(growable: false);
                 final filteredUsers = _filterUsers(allUsers);
+                final visibleUsers = _displayLimit == 0
+                    ? filteredUsers
+                    : filteredUsers.take(_displayLimit).toList();
 
                 if (filteredUsers.isEmpty) {
                   return const Center(
@@ -1368,28 +1372,83 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filteredUsers.length,
-                  itemBuilder: (context, index) {
-                    final user = filteredUsers[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _UserCard(
-                        user: user,
-                        onEdit: () =>
-                            _afterFrame(() => _showEditUserDialog(user)),
-                        onChangeRole: () =>
-                            _afterFrame(() => _showChangeRoleDialog(user)),
-                        onResetPassword: () =>
-                            _afterFrame(() => _showResetPasswordDialog(user)),
-                        onUpdateStatus: () =>
-                            _afterFrame(() => _showUpdateStatusDialog(user)),
-                        onDelete: () =>
-                            _afterFrame(() => _showDeleteConfirmation(user)),
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              visibleUsers.length == filteredUsers.length
+                                  ? '${filteredUsers.length} user${filteredUsers.length == 1 ? '' : 's'}'
+                                  : 'Showing ${visibleUsers.length} of ${filteredUsers.length} users',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          const Text('Show'),
+                          const SizedBox(width: 6),
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: _displayLimit,
+                              isDense: true,
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _displayLimit = value);
+                                }
+                              },
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10')),
+                                DropdownMenuItem(value: 25, child: Text('25')),
+                                DropdownMenuItem(value: 50, child: Text('50')),
+                                DropdownMenuItem(
+                                  value: 100,
+                                  child: Text('100'),
+                                ),
+                                DropdownMenuItem(value: 0, child: Text('All')),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: visibleUsers.length,
+                        itemBuilder: (context, index) {
+                          final user = visibleUsers[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _UserCard(
+                              user: user,
+                              onEdit: () =>
+                                  _afterFrame(() => _showEditUserDialog(user)),
+                              onChangeRole: () => _afterFrame(
+                                () => _showChangeRoleDialog(user),
+                              ),
+                              onResetPassword: () => _afterFrame(
+                                () => _showResetPasswordDialog(user),
+                              ),
+                              onUpdateStatus: () => _afterFrame(
+                                () => _showUpdateStatusDialog(user),
+                              ),
+                              onDelete: () => _afterFrame(
+                                () => _showDeleteConfirmation(user),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),

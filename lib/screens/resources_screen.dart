@@ -14,7 +14,7 @@ import '../services/resource_service.dart';
 import '../widgets/borrower_navigation_bar.dart';
 import '../widgets/qr_camera_scanner_screen.dart';
 import '../widgets/qr_borrow_response_modal.dart';
-import 'student/borrow_request_screen.dart';
+import 'student/borrow_item_screen.dart';
 
 class ResourcesScreen extends StatefulWidget {
   const ResourcesScreen({super.key});
@@ -301,11 +301,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     );
   }
 
-  Future<void> _openBorrowRequest(ResourceItem resource) async {
+  Future<void> _openBorrowItem(ResourceItem resource) async {
     final borrower = await _currentBorrower();
     if (borrower == null) {
       if (mounted) {
-        _showSnackBar('Please sign in to request a borrow.', isError: true);
+        _showSnackBar('Please sign in to borrow an item.', isError: true);
       }
       return;
     }
@@ -313,18 +313,16 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     if (!mounted) return;
 
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => BorrowRequestScreen(resource: resource),
-      ),
+      MaterialPageRoute(builder: (_) => BorrowItemScreen(resource: resource)),
     );
   }
 
   void _borrowResource(ResourceItem resource, bool blocked) {
     if (blocked) {
-      _showSnackBar('You already have an active borrow request for this item.');
+      _showSnackBar('You already have an active borrow for this item.');
       return;
     }
-    _openBorrowRequest(resource);
+    _openBorrowItem(resource);
   }
 
   Future<void> _startQrBorrowScan() async {
@@ -357,7 +355,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
       await showQrBorrowResponseModal(
         context: context,
         resource: resource,
-        onProceed: _openBorrowRequest,
+        onProceed: _openBorrowItem,
       );
     } catch (error) {
       if (!mounted) return;
@@ -389,11 +387,6 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
           : StreamBuilder<List<BorrowTransaction>>(
               stream: _borrowService.getStudentBorrowHistory(userId),
               builder: (context, borrowSnapshot) {
-                final pendingResourceIds = (borrowSnapshot.data ?? const [])
-                    .where((transaction) => transaction.isPending)
-                    .map((transaction) => transaction.resourceId)
-                    .toSet();
-
                 final activeResourceIds = (borrowSnapshot.data ?? const [])
                     .where(
                       (transaction) =>
@@ -710,9 +703,6 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                               final resource = filteredResources[index];
                               return _ResourceGridCard(
                                 resource: resource,
-                                pending: pendingResourceIds.contains(
-                                  resource.id,
-                                ),
                                 blocked: activeResourceIds.contains(
                                   resource.id,
                                 ),
@@ -729,9 +719,6 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                               padding: const EdgeInsets.only(bottom: 16),
                               child: _ResourceCard(
                                 resource: resource,
-                                pending: pendingResourceIds.contains(
-                                  resource.id,
-                                ),
                                 blocked: activeResourceIds.contains(
                                   resource.id,
                                 ),
@@ -756,13 +743,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 class _ResourceGridCard extends StatelessWidget {
   const _ResourceGridCard({
     required this.resource,
-    required this.pending,
     required this.blocked,
     required this.onBorrow,
   });
-
   final ResourceItem resource;
-  final bool pending;
   final bool blocked;
   final VoidCallback onBorrow;
 
@@ -813,7 +797,7 @@ class _ResourceGridCard extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: (blocked || pending || !resource.isAvailable)
+                    onPressed: (blocked || !resource.isAvailable)
                         ? null
                         : onBorrow,
                     style: FilledButton.styleFrom(
@@ -822,10 +806,8 @@ class _ResourceGridCard extends StatelessWidget {
                     child: Text(
                       blocked
                           ? 'Already Borrowed'
-                          : pending
-                          ? 'Pending'
                           : resource.isAvailable
-                          ? 'Request Borrow'
+                          ? 'Borrow Item'
                           : 'Unavailable',
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -843,12 +825,10 @@ class _ResourceGridCard extends StatelessWidget {
 class _ResourceCard extends StatelessWidget {
   const _ResourceCard({
     required this.resource,
-    required this.pending,
     required this.blocked,
     required this.onBorrow,
   });
   final ResourceItem resource;
-  final bool pending;
   final bool blocked;
   final VoidCallback onBorrow;
 
@@ -926,7 +906,7 @@ class _ResourceCard extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: (blocked || pending || !resource.isAvailable)
+                    onPressed: (blocked || !resource.isAvailable)
                         ? null
                         : onBorrow,
                     style: FilledButton.styleFrom(
@@ -936,10 +916,8 @@ class _ResourceCard extends StatelessWidget {
                     child: Text(
                       blocked
                           ? 'Already Borrowed'
-                          : pending
-                          ? 'Pending'
                           : resource.isAvailable
-                          ? 'Request Borrow'
+                          ? 'Borrow Item'
                           : 'Unavailable',
                       overflow: TextOverflow.ellipsis,
                     ),

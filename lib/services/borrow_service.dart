@@ -2,25 +2,23 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/borrow_transaction_model.dart';
 import '../models/resource_item.dart';
+import 'auth_service.dart';
 import 'resource_service.dart';
 
 /// Real-time metric counts for the student/teacher dashboard.
 class BorrowerDashboardMetrics {
   const BorrowerDashboardMetrics({
     required this.borrowedCount,
-    required this.pendingBorrowCount,
     required this.pendingReturnCount,
     required this.overdueCount,
   });
 
   final int borrowedCount;
-  final int pendingBorrowCount;
   final int pendingReturnCount;
   final int overdueCount;
 
   static const BorrowerDashboardMetrics empty = BorrowerDashboardMetrics(
     borrowedCount: 0,
-    pendingBorrowCount: 0,
     pendingReturnCount: 0,
     overdueCount: 0,
   );
@@ -35,11 +33,6 @@ class BorrowService {
 
   static const String collection = 'borrow_transactions';
 
-  /// Stored on auto-rejected borrow requests whose scheduled dates passed.
-  static const String borrowRequestExpiredReason =
-      "Expired: Property Custodian didn't take action before the requested "
-      'return date.';
-
   /// Shorter copy shown to borrowers in cards and detail views.
   static const String borrowRequestExpiredDisplayReason =
       "Property Custodian didn't take action in time.";
@@ -50,7 +43,7 @@ class BorrowService {
   DocumentReference<Map<String, dynamic>> _resourceRef(String resourceId) =>
       _firestore.collection(ResourceService.collection).doc(resourceId);
 
-  /// Creates a pending borrow request for a student or teacher.
+  /// Creates a borrow transaction for a student or teacher.
   Future<String> requestBorrow({
     required String resourceId,
     required String resourceName,
@@ -232,121 +225,16 @@ class BorrowService {
       });
     });
 
-    return transRef.id;
-  }
-
-  /// Whether a pending borrow request can no longer be approved.
-  static bool isPendingBorrowRequestExpired({
-    required DateTime borrowDate,
-    required DateTime expectedReturnDate,
-  }) {
-    final today = _dateOnly(DateTime.now());
-    final borrowDay = _dateOnly(borrowDate);
-    final returnDay = _dateOnly(expectedReturnDate);
-    return !today.isBefore(returnDay) || today.isAfter(borrowDay);
-  }
-
-  static bool isPendingBorrowTransactionExpired(BorrowTransaction transaction) {
-    return transaction.isPending &&
-        isPendingBorrowRequestExpired(
-          borrowDate: transaction.borrowDate,
-          expectedReturnDate: transaction.expectedReturnDate,
-        );
-  }
-
-  static bool isExpiredBorrowRejection(BorrowTransaction transaction) {
-    return transaction.isBorrowRejected &&
-        (transaction.rejectionReason?.startsWith('Expired:') ?? false);
-  }
-
-  /// Approves a pending request and decrements resource stock.
-  ///
-  /// Uses a [WriteBatch] instead of [FirebaseFirestore.runTransaction] because
-  /// Firestore transactions are unreliable on Windows desktop.
-  Future<void> approveBorrow(String transactionId, String resourceId) async {
-    final trimmedTxnId = transactionId.trim();
-    final trimmedResourceId = resourceId.trim();
-
-    if (trimmedTxnId.isEmpty || trimmedResourceId.isEmpty) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-id',
-        message: 'Transaction or resource id is missing.',
-      );
-    }
-
-    final txnRef = _transactions.doc(trimmedTxnId);
-    final resourceRef = _resourceRef(trimmedResourceId);
-
-    final txnSnap = await txnRef.get();
-    if (!txnSnap.exists) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'transaction-not-found',
-        message: 'Borrow request was not found.',
-      );
-    }
-
-    final txnData = txnSnap.data()!;
-    if (txnData['status'] != BorrowTransactionStatus.pending) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-status',
-        message: 'This request has already been processed.',
-      );
-    }
-
-    final borrowDate = _dateFrom(txnData['borrowDate']);
-    final expectedReturnDate = _dateFrom(txnData['expectedReturnDate']);
-    if (borrowDate != null &&
-        expectedReturnDate != null &&
-        isPendingBorrowRequestExpired(
-          borrowDate: borrowDate,
-          expectedReturnDate: expectedReturnDate,
-        )) {
-      await txnRef.update({
-        'status': BorrowTransactionStatus.borrowRejected,
-        'rejectionReason': borrowRequestExpiredReason,
-      });
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'borrow-expired',
-        message:
-            'This borrow request has expired because the scheduled date has passed.',
-      );
-    }
-
-    final resourceSnap = await resourceRef.get();
-    if (!resourceSnap.exists) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'resource-not-found',
-        message: 'The resource no longer exists.',
-      );
-    }
-
-    final available = _asInt(
-      resourceSnap.data()?['availableQuantity'],
-      fallback: 0,
+    await _recordAudit(
+      userId: userId,
+      actionType: 'borrow_created',
+      title: 'Item Borrowed',
+      description:
+          '$userName borrowed $quantity item(s) of $resourceName ($resourceCode).',
+      resourceName: resourceName,
+      resourceCode: resourceCode,
     );
-    final requestedQuantity = _asInt(txnData['requestedQuantity'], fallback: 1);
-    if (available < requestedQuantity) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'out-of-stock',
-        message: 'Only $available item${available == 1 ? '' : 's'} available.',
-      );
-    }
-
-    final batch = _firestore.batch();
-    batch.update(resourceRef, {
-      'availableQuantity': available - requestedQuantity,
-    });
-    batch.update(txnRef, {
-      'status': BorrowTransactionStatus.borrowed,
-      'approvedAt': FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
+    return transRef.id;
   }
 
   /// Student/teacher initiates a return with proof type and condition details.
@@ -452,6 +340,19 @@ class BorrowService {
       else
         'returnProofImage': FieldValue.delete(),
     });
+    await _recordAudit(
+      userId: (txnData['userId'] ?? '').toString(),
+      actionType: status == BorrowTransactionStatus.returnRejected
+          ? 'return_resubmitted'
+          : 'return_submitted',
+      title: status == BorrowTransactionStatus.returnRejected
+          ? 'Return Resubmitted'
+          : 'Return Submitted',
+      description:
+          '${txnData['userName'] ?? 'Borrower'} submitted $returnQuantity item(s) of ${txnData['resourceName'] ?? 'the resource'} for return verification.',
+      resourceName: txnData['resourceName']?.toString(),
+      resourceCode: txnData['resourceCode']?.toString(),
+    );
   }
 
   /// Student/teacher initiates a return — moves item to custodian verification queue.
@@ -502,6 +403,19 @@ class BorrowService {
       if (trimmedProofImage != null && trimmedProofImage.isNotEmpty)
         'returnProofImage': trimmedProofImage,
     });
+    await _recordAudit(
+      userId: (txnSnap.data()?['userId'] ?? '').toString(),
+      actionType: status == BorrowTransactionStatus.returnRejected
+          ? 'return_resubmitted'
+          : 'return_submitted',
+      title: status == BorrowTransactionStatus.returnRejected
+          ? 'Return Resubmitted'
+          : 'Return Submitted',
+      description:
+          '${txnSnap.data()?['userName'] ?? 'Borrower'} submitted ${txnSnap.data()?['resourceName'] ?? 'the resource'} for return verification.',
+      resourceName: txnSnap.data()?['resourceName']?.toString(),
+      resourceCode: txnSnap.data()?['resourceCode']?.toString(),
+    );
   }
 
   /// Re-submits a rejected return for custodian review.
@@ -576,6 +490,15 @@ class BorrowService {
       else
         'returnProofImage': FieldValue.delete(),
     });
+    await _recordAudit(
+      userId: (txnSnap.data()?['userId'] ?? '').toString(),
+      actionType: 'return_resubmitted',
+      title: 'Return Resubmitted',
+      description:
+          '${txnSnap.data()?['userName'] ?? 'Borrower'} resubmitted ${txnSnap.data()?['resourceName'] ?? 'the resource'} with ${ReturnType.labelFor(trimmedAppealType)}.',
+      resourceName: txnSnap.data()?['resourceName']?.toString(),
+      resourceCode: txnSnap.data()?['resourceCode']?.toString(),
+    );
   }
 
   /// Atomically verifies a return and restores stock.
@@ -670,6 +593,15 @@ class BorrowService {
       });
     }
     await batch.commit();
+    await _recordAudit(
+      userId: (txnData['userId'] ?? '').toString(),
+      actionType: 'return_accepted',
+      title: 'Return Accepted',
+      description:
+          'Return accepted for ${txnData['resourceName'] ?? 'the resource'} from ${txnData['userName'] ?? 'the borrower'}.',
+      resourceName: txnData['resourceName']?.toString(),
+      resourceCode: txnData['resourceCode']?.toString(),
+    );
   }
 
   /// Custodian rejects a pending return request.
@@ -728,96 +660,34 @@ class BorrowService {
       'rejectionReason': reason,
       'requiredReturnType': requiredType,
     });
+    await _recordAudit(
+      userId: (txnSnap.data()?['userId'] ?? '').toString(),
+      actionType: 'return_rejected',
+      title: 'Return Rejected',
+      description:
+          'Return rejected for ${txnSnap.data()?['resourceName'] ?? 'the resource'} from ${txnSnap.data()?['userName'] ?? 'the borrower'}. Required correction: $requiredType.',
+      resourceName: txnSnap.data()?['resourceName']?.toString(),
+      resourceCode: txnSnap.data()?['resourceCode']?.toString(),
+    );
   }
 
-  /// Rejects a pending borrow request without changing inventory.
-  Future<void> rejectBorrow(
-    String transactionId, {
-    String? rejectionReason,
+  Future<void> _recordAudit({
+    required String userId,
+    required String actionType,
+    required String title,
+    required String description,
+    String? resourceName,
+    String? resourceCode,
   }) async {
-    final trimmedTxnId = transactionId.trim();
-    if (trimmedTxnId.isEmpty) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-id',
-        message: 'Transaction id is missing.',
-      );
-    }
-
-    final txnRef = _transactions.doc(trimmedTxnId);
-    final txnSnap = await txnRef.get();
-    if (!txnSnap.exists) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'transaction-not-found',
-        message: 'Borrow request was not found.',
-      );
-    }
-
-    if (txnSnap.data()?['status'] != BorrowTransactionStatus.pending) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-status',
-        message: 'Only pending requests can be rejected.',
-      );
-    }
-
-    await txnRef.update({
-      'status': BorrowTransactionStatus.borrowRejected,
-      if (rejectionReason?.trim().isNotEmpty ?? false)
-        'rejectionReason': rejectionReason!.trim(),
-    });
-  }
-
-  /// Marks a stale pending borrow request as auto-rejected without changing inventory.
-  Future<void> expireBorrowRequest(String transactionId) async {
-    final trimmedTxnId = transactionId.trim();
-    if (trimmedTxnId.isEmpty) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-id',
-        message: 'Transaction id is missing.',
-      );
-    }
-
-    final txnRef = _transactions.doc(trimmedTxnId);
-    final txnSnap = await txnRef.get();
-    if (!txnSnap.exists) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'transaction-not-found',
-        message: 'Borrow request was not found.',
-      );
-    }
-
-    final txnData = txnSnap.data()!;
-    if (txnData['status'] != BorrowTransactionStatus.pending) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-status',
-        message: 'Only pending requests can be marked expired.',
-      );
-    }
-
-    final borrowDate = _dateFrom(txnData['borrowDate']);
-    final expectedReturnDate = _dateFrom(txnData['expectedReturnDate']);
-    if (borrowDate == null ||
-        expectedReturnDate == null ||
-        !isPendingBorrowRequestExpired(
-          borrowDate: borrowDate,
-          expectedReturnDate: expectedReturnDate,
-        )) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'borrow-not-expired',
-        message: 'This borrow request has not expired yet.',
-      );
-    }
-
-    await txnRef.update({
-      'status': BorrowTransactionStatus.borrowRejected,
-      'rejectionReason': borrowRequestExpiredReason,
-    });
+    if (userId.trim().isEmpty) return;
+    await AuthService.recordAudit(
+      userId: userId,
+      actionType: actionType,
+      title: title,
+      description: description,
+      resourceName: resourceName,
+      resourceCode: resourceCode,
+    );
   }
 
   /// All borrow transactions for a user, newest first.
@@ -829,19 +699,7 @@ class BorrowService {
         .map(_mapAndSortTransactions);
   }
 
-  /// Active pending borrow requests for the My Requests → Borrow tab.
-  Stream<List<BorrowTransaction>> watchBorrowRequests(String userId) {
-    return getStudentBorrowHistory(userId).map(
-      (transactions) => transactions
-          .where(
-            (transaction) =>
-                transaction.status == BorrowTransactionStatus.pending,
-          )
-          .toList(),
-    );
-  }
-
-  /// Active return processes for the My Requests → Return tab.
+  /// Active return processes for the My Borrowings → Return Status tab.
   Stream<List<BorrowTransaction>> watchReturnRequests(String userId) {
     return getStudentBorrowHistory(userId).map(
       (transactions) => transactions
@@ -1001,7 +859,6 @@ class BorrowService {
     List<BorrowTransaction> transactions,
   ) {
     var borrowedCount = 0;
-    var pendingBorrowCount = 0;
     var pendingReturnCount = 0;
     var overdueCount = 0;
 
@@ -1012,7 +869,6 @@ class BorrowService {
           if (isOverdueBorrowing(transaction)) overdueCount++;
           break;
         case BorrowTransactionStatus.pending:
-          pendingBorrowCount++;
           break;
         case BorrowTransactionStatus.returnPending:
           pendingReturnCount++;
@@ -1022,7 +878,6 @@ class BorrowService {
 
     return BorrowerDashboardMetrics(
       borrowedCount: borrowedCount,
-      pendingBorrowCount: pendingBorrowCount,
       pendingReturnCount: pendingReturnCount,
       overdueCount: overdueCount,
     );
@@ -1049,12 +904,9 @@ class BorrowService {
         .map(_mapAndSortTransactions);
   }
 
-  /// Pending requests for custodian approval (legacy/fallback support).
-  Stream<List<BorrowTransaction>> getPendingRequests() {
-    return _transactions
-        .where('status', isEqualTo: BorrowTransactionStatus.pending)
-        .snapshots()
-        .map(_mapAndSortTransactions);
+  /// Real-time history of all borrowing and return transactions for monitoring.
+  Stream<List<BorrowTransaction>> watchAllTransactions() {
+    return _transactions.snapshots().map(_mapAndSortTransactions);
   }
 
   /// Return requests awaiting custodian verification.

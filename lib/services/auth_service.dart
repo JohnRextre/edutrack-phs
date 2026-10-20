@@ -40,7 +40,48 @@ class AuthService {
 
   static User? get currentUser => _auth.currentUser;
 
-  static Future<void> signOut() => _auth.signOut();
+  static Future<void> signOut() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      await recordAudit(
+        userId: user.uid,
+        actionType: 'logout',
+        title: 'Logged out',
+        description: 'You logged out of EduTrack.',
+      );
+    }
+    await _auth.signOut();
+  }
+
+  static Future<void> recordAudit({
+    required String userId,
+    required String actionType,
+    required String title,
+    required String description,
+    String? resourceName,
+    String? resourceCode,
+  }) async {
+    try {
+      await _firestore.collection('audit_logs').add({
+        'userId': userId,
+        'actorId': _auth.currentUser?.uid ?? userId,
+        'actorName':
+            _auth.currentUser?.displayName ??
+            _auth.currentUser?.email ??
+            userId,
+        'actionType': actionType,
+        'title': title,
+        'description': description,
+        if (resourceName != null && resourceName.trim().isNotEmpty)
+          'resourceName': resourceName.trim(),
+        if (resourceCode != null && resourceCode.trim().isNotEmpty)
+          'resourceCode': resourceCode.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (error) {
+      debugPrint('Unable to record account activity: ${error.message}');
+    }
+  }
 
   Future<void> sendEmailVerification() async {
     final user = _auth.currentUser;
@@ -291,6 +332,12 @@ class AuthService {
         'emailVerified': false,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await recordAudit(
+        userId: user.uid,
+        actionType: 'account_created',
+        title: 'Created an account',
+        description: 'Your EduTrack account was created.',
+      );
 
       if (isInitialAdmin || role == AccountRole.ictCoordinator) {
         await _firestore.doc(configDocumentPath).set({
@@ -374,6 +421,12 @@ class AuthService {
     }
 
     await user.reload();
+    await recordAudit(
+      userId: user.uid,
+      actionType: 'login',
+      title: 'Logged in',
+      description: 'You logged in to EduTrack.',
+    );
     return _auth.currentUser ?? user;
   }
 
