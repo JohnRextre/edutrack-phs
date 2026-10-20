@@ -1,8 +1,8 @@
 # EduTrack PHS
 
 EduTrack PHS is a high school resource inventory and borrowing system. It
-helps schools track equipment and books, manage borrow requests, and verify
-returns with photo proof.
+helps schools track equipment and books, manage role-based borrow workflows,
+monitor transactions, and verify returns with photo proof.
 
 ## Features
 
@@ -14,8 +14,12 @@ returns with photo proof.
 - Switch between grid view and list view.
 - Submit and track borrowing requests.
 - View due dates and active borrowings.
+- Scan QR codes to borrow or return tagged resources.
 - Upload photo proof when returning an item.
+- Submit return resolutions or appeals when a transaction needs review.
 - View account activities and transaction history.
+- Receive role-specific notifications for requests, approvals, returns, and
+  account activity.
 - Edit profile information such as name, section or department, and phone.
 - Sign in using a School ID or email address.
 
@@ -23,18 +27,22 @@ returns with photo proof.
 
 ### Students and Teachers
 
-Students and teachers can search resources, submit borrow requests, track due
-dates, and upload return photos.
+Students and teachers can search resources, submit borrow requests, use QR
+borrow and return flows, track due dates, receive notifications, and upload
+return photos. They can also review transaction details and submit a
+resolution or appeal when needed.
 
 ### Property Custodians
 
-Property Custodians can approve borrow requests, inspect return photo proof,
-manage inventory, and update stock counts.
+Property Custodians can approve borrow requests, manage borrowed inventory,
+inspect and verify return photo proof, manage resources, update stock counts,
+and review reports and analytics.
 
 ### ICT Coordinators and Admins
 
-ICT Coordinators and admins can manage user accounts, assign roles, review
-activity logs, and monitor the system.
+ICT Coordinators and admins can manage user accounts and sections, assign
+roles, review activity logs, monitor borrowing transactions and resource
+inventory, view reports, and receive system notifications.
 
 ## Technology
 
@@ -63,6 +71,7 @@ test/           Unit and widget tests
 - Dart SDK included with Flutter
 - A Firebase project
 - Android Studio or Xcode for mobile development
+- A device or emulator with camera support for QR scanning
 
 ### Install Dependencies
 
@@ -106,7 +115,11 @@ The application currently uses these main collections:
 
 - `users` for account profiles, roles, approval status, and contact details.
 - `resources` for school equipment and book inventory.
-- `borrow_transactions` for requests, borrowings, returns, and rejection data.
+- `borrow_transactions` for requests, borrowings, returns, rejection data, and
+  return verification details.
+- `sections` for class and department section assignments.
+- `audit_logs` for system activity and administrative audit records.
+- User-scoped `notification_reads` documents for notification read status.
 
 Firestore security rules should restrict users to the records and operations
 allowed by their role.
