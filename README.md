@@ -12,14 +12,15 @@ monitor transactions, and verify returns with photo proof.
 - Filter resources by category and availability.
 - Sort resources by name, popularity, or date added.
 - Switch between grid view and list view.
-- Submit and track borrowing requests.
+- Start automated borrowing when an item is available and track the resulting
+  transaction.
 - View due dates and active borrowings.
 - Scan QR codes to borrow or return tagged resources.
 - Upload photo proof when returning an item.
 - Submit return resolutions or appeals when a transaction needs review.
 - View account activities and transaction history.
-- Receive role-specific notifications for requests, approvals, returns, and
-  account activity.
+- Receive role-specific notifications for borrowing, returns, and account
+  activity.
 - Edit profile information such as name, section or department, and phone.
 - Sign in using a School ID or email address.
 
@@ -27,16 +28,16 @@ monitor transactions, and verify returns with photo proof.
 
 ### Students and Teachers
 
-Students and teachers can search resources, submit borrow requests, use QR
-borrow and return flows, track due dates, receive notifications, and upload
-return photos. They can also review transaction details and submit a
-resolution or appeal when needed.
+Students and teachers can search resources, start automated borrowing for
+available items, use QR borrow and return flows, track due dates, receive
+notifications, and upload return photos. They can also review transaction
+details and submit a resolution or appeal when needed.
 
 ### Property Custodians
 
-Property Custodians can approve borrow requests, manage borrowed inventory,
-inspect and verify return photo proof, manage resources, update stock counts,
-and review reports and analytics.
+Property Custodians can manage borrowed inventory, inspect and verify return
+photo proof, manage resources, update stock counts, and review reports and
+analytics.
 
 ### ICT Coordinators and Admins
 
@@ -115,7 +116,7 @@ The application currently uses these main collections:
 
 - `users` for account profiles, roles, approval status, and contact details.
 - `resources` for school equipment and book inventory.
-- `borrow_transactions` for requests, borrowings, returns, rejection data, and
+- `borrow_transactions` for automated borrowings, returns, rejection data, and
   return verification details.
 - `sections` for class and department section assignments.
 - `audit_logs` for system activity and administrative audit records.
