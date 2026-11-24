@@ -149,7 +149,10 @@ class ReturnSubmissionPreview extends StatelessWidget {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            ReturnTypeBadge(returnType: transaction.returnType, compact: compact),
+            ReturnTypeBadge(
+              returnType: transaction.returnType,
+              compact: compact,
+            ),
             if (overdue)
               Container(
                 padding: EdgeInsets.symmetric(
@@ -196,4 +199,3 @@ class ReturnSubmissionPreview extends StatelessWidget {
     );
   }
 }
-

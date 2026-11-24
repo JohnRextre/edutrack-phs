@@ -2,11 +2,11 @@ import 'package:firebase_core/firebase_core.dart';
 
 class DefaultFirebaseOptions {
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCZAj1er_WQab6MRyQEAUVMncPrpGCuGYM',
+    apiKey: String.fromEnvironment('FIREBASE_WEB_API_KEY'),
     appId: String.fromEnvironment('FIREBASE_WEB_APP_ID'),
-    messagingSenderId: '701241608072',
+    messagingSenderId: String.fromEnvironment('FIREBASE_SENDER_ID'),
     projectId: 'edutrack-phs',
-    authDomain: 'edutrack-phs.firebaseapp.com',
-    storageBucket: 'edutrack-phs.firebasestorage.app',
+    authDomain: String.fromEnvironment('FIREBASE_WEB_AUTH_DOMAIN'),
+    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
   );
 }

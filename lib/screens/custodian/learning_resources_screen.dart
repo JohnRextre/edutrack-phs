@@ -301,7 +301,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Code: ${resource.itemCode} • ${resource.subCategory}',
+                              'Code: ${resource.itemCode} â€¢ ${resource.subCategory}',
                               style: textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -530,18 +530,18 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '• New Available: ${resource.availableQuantity - deleteQty}',
+                                  'â€¢ New Available: ${resource.availableQuantity - deleteQty}',
                                   style: textTheme.bodySmall,
                                 ),
                                 Text(
-                                  '• New Total: ${resource.totalQuantity - deleteQty}',
+                                  'â€¢ New Total: ${resource.totalQuantity - deleteQty}',
                                   style: textTheme.bodySmall,
                                 ),
                                 if (resource.totalQuantity - deleteQty <= 0)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
-                                      'ℹ️ Total quantity will reach 0; the resource item will be removed from inventory.',
+                                      'â„¹ï¸ Total quantity will reach 0; the resource item will be removed from inventory.',
                                       style: textTheme.bodySmall?.copyWith(
                                         color: Colors.blue.shade700,
                                       ),
@@ -593,7 +593,7 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
                               if (resource.borrowedQuantity > 0) ...[
                                 const SizedBox(height: 6),
                                 Text(
-                                  '⚠️ Notice: ${resource.borrowedQuantity} item(s) are currently marked as borrowed.',
+                                  'âš ï¸ Notice: ${resource.borrowedQuantity} item(s) are currently marked as borrowed.',
                                   style: TextStyle(
                                     color: Colors.red.shade900,
                                     fontWeight: FontWeight.bold,

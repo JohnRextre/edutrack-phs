@@ -18,11 +18,19 @@ class AuthService {
 
   static Future<void> initialize() async {
     try {
-      if (kIsWeb && DefaultFirebaseOptions.web.appId.isEmpty) {
+      final webOptions = DefaultFirebaseOptions.web;
+      if (kIsWeb &&
+          (webOptions.apiKey.isEmpty ||
+              webOptions.appId.isEmpty ||
+              webOptions.messagingSenderId.isEmpty ||
+              webOptions.authDomain == null ||
+              webOptions.authDomain!.isEmpty ||
+              webOptions.storageBucket == null ||
+              webOptions.storageBucket!.isEmpty)) {
         throw FirebaseAuthException(
           code: 'firebase-unavailable',
           message:
-              'Missing FIREBASE_WEB_APP_ID. Register a Web App in Firebase and run with --dart-define=FIREBASE_WEB_APP_ID=1:...:web:....',
+              'Missing Firebase web configuration. Fill the FIREBASE_* values in .env, then run with --dart-define-from-file=.env.',
         );
       }
       await Firebase.initializeApp(
@@ -368,7 +376,6 @@ class AuthService {
   Future<User> signInWithAccount({
     required String email,
     required String password,
-    required AccountRole selectedRole,
   }) async {
     final trimmedEmail = email.trim();
     if (trimmedEmail.isEmpty) {
@@ -391,11 +398,11 @@ class AuthService {
     }
 
     final storedRole = accountRoleFromFirestoreValue(profileData['role']);
-    if (storedRole != selectedRole) {
+    if (kIsWeb && storedRole.isBorrower) {
       throw FirebaseAuthException(
-        code: 'role-mismatch',
+        code: 'web-role-not-supported',
         message:
-            'Account not registered as ${selectedRole.label}. Please check your Account Type or Credentials.',
+            'Student and Teacher accounts are for the mobile app. Please use an Admin or Property Custodian account on the web.',
       );
     }
 

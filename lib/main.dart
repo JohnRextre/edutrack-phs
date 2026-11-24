@@ -1,40 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'models/account_role.dart';
-import 'screens/admin_dashboard_screen.dart';
-import 'screens/account_activities_screen.dart';
-import 'screens/admin_system_logs_screen.dart';
-import 'screens/admin_user_management_screen.dart';
-import 'screens/admin_sections_screen.dart';
-import 'screens/admin_resource_monitoring_screen.dart';
-import 'screens/admin_borrowing_monitor_screen.dart';
-import 'screens/admin_reports_screen.dart';
-import 'screens/custodian_borrowed_inventory_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/common/account_activities_screen.dart';
+import 'screens/admin/admin_system_logs_screen.dart';
+import 'screens/admin/admin_user_management_screen.dart';
+import 'screens/admin/admin_sections_screen.dart';
+import 'screens/admin/admin_resource_monitoring_screen.dart';
+import 'screens/admin/admin_borrowing_monitor_screen.dart';
+import 'screens/admin/admin_reports_screen.dart';
+import 'screens/custodian/custodian_borrowed_inventory_screen.dart';
 import 'screens/custodian/reports_analytics_screen.dart';
 import 'screens/custodian/learning_resources_screen.dart';
-import 'screens/custodian_return_verification_screen.dart';
-import 'screens/dashboard_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/homepage_screen.dart';
-import 'screens/email_verification_screen.dart';
-import 'screens/initial_admin_setup_screen.dart';
-import 'screens/my_borrowings_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/register_screen.dart';
-import 'screens/resources_screen.dart';
+import 'screens/custodian/custodian_return_verification_screen.dart';
+import 'screens/common/dashboard_screen.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/common/homepage_screen.dart';
+import 'screens/auth/email_verification_screen.dart';
+import 'screens/auth/initial_admin_setup_screen.dart';
+import 'screens/borrower/my_borrowings_screen.dart';
+import 'screens/common/profile_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'screens/borrower/resources_screen.dart';
 import 'services/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AuthService.initialize();
-  runApp(const MyApp());
+  Object? startupError;
+  try {
+    await AuthService.initialize();
+  } catch (error) {
+    startupError = error;
+  }
+  runApp(MyApp(startupError: startupError));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.startupError});
+
+  final Object? startupError;
 
   @override
   Widget build(BuildContext context) {
+    if (startupError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF176B87)),
+        ),
+        home: _StartupErrorScreen(error: startupError!),
+      );
+    }
     return MaterialApp(
       title: 'EduTrack PHS',
       theme: ThemeData(
@@ -43,6 +61,35 @@ class MyApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF5F8FC),
+        cardTheme: const CardThemeData(
+          color: Colors.white,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(20)),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFF176B87), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
       ),
       initialRoute: '/home',
       routes: {
@@ -98,4 +145,56 @@ AccountRole _roleFromArguments(Object? value) {
     (role) => role.name == roleName,
     orElse: () => AccountRole.student,
   );
+}
+
+class _StartupErrorScreen extends StatelessWidget {
+  const _StartupErrorScreen({required this.error});
+
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = error is FirebaseAuthException
+        ? (error as FirebaseAuthException).message
+        : null;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F8FC),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_rounded,
+                    size: 52,
+                    color: Color(0xFF176B87),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'EduTrack could not start',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    message ??
+                        'Firebase could not be initialized. Check the web configuration and rebuild.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

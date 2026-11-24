@@ -67,6 +67,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - lib/assets/web/
     - lib/assets/borrowed_assets/
     - lib/assets/edutrack_logo/EduTrack_Rectangle_Logo-NoBackground.png
     - lib/assets/edutrack_logo/EduTrack_Square_Logo.png

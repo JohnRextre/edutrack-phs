@@ -378,7 +378,7 @@ class _ReportHeader extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 Text(
-                  'Live custodian view  •  $rangeLabel',
+                  'Live custodian view  â€¢  $rangeLabel',
                   style: TextStyle(color: colors.onSurfaceVariant),
                 ),
               ],

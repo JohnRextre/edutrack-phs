@@ -1,0 +1,1152 @@
+import 'package:flutter/material.dart';
+
+import '../../models/borrow_transaction_model.dart';
+import '../../services/analytics_service.dart';
+import '../../services/borrow_service.dart';
+import '../../services/dashboard_service.dart';
+import '../../services/report_export_service.dart';
+import '../../widgets/borrow_status_badge.dart';
+import '../../widgets/borrow_transaction_details_modal.dart';
+import '../../widgets/return_verification_details.dart';
+import 'add_edit_resource_screen.dart';
+import 'return_verification_details_screen.dart';
+
+class CustodianDashboardScreen extends StatefulWidget {
+  const CustodianDashboardScreen({super.key});
+
+  @override
+  State<CustodianDashboardScreen> createState() =>
+      _CustodianDashboardScreenState();
+}
+
+class _CustodianDashboardScreenState extends State<CustodianDashboardScreen> {
+  final DashboardService _dashboardService = DashboardService();
+  final BorrowService _borrowService = BorrowService();
+  final AnalyticsService _analyticsService = AnalyticsService();
+  final ReportExportService _reportExportService = ReportExportService();
+  bool _isProcessing = false;
+  bool _isExporting = false;
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : null,
+      ),
+    );
+  }
+
+  Future<void> _runWithLoading(Future<void> Function() action) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await action();
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('Action completed successfully.');
+      }
+    } catch (error) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar(BorrowService.friendlyErrorMessage(error), isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _exportReport() async {
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
+
+    try {
+      final summary = await _analyticsService.fetchSummary();
+      await _reportExportService.exportSummary(summary: summary, format: 'PDF');
+      if (mounted) {
+        _showSnackBar('PDF report is ready to share.');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar('Unable to export report: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  Future<void> _openReturnDetails(
+    BorrowTransaction transaction, {
+    String? section,
+  }) async {
+    final result = await ReturnVerificationDetailsScreen.open(
+      context,
+      transaction: transaction,
+      borrowerSection: section,
+    );
+    if (!mounted || result == null) return;
+
+    _showReturnResultSnackBar(result);
+  }
+
+  void _showReturnResultSnackBar(bool accepted) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showSnackBar(
+        accepted ? 'Return accepted and stock restored.' : 'Return rejected.',
+      );
+    });
+  }
+
+  void _verifyReturn(BorrowTransaction transaction, {String? section}) {
+    _openReturnDetails(transaction, section: section);
+  }
+
+  void _assessDamage(BorrowTransaction transaction) {
+    final notesController = TextEditingController(
+      text: DashboardService.conditionNotes(transaction),
+    );
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Assess Damage'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${transaction.resourceName} â€” ${transaction.userName}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Condition notes',
+                hintText: 'Describe damage or item condition',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Full verification is available on the Return Verification screen.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pushNamed(context, '/custodian-return-verification');
+            },
+            child: const Text('Open Verification'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _runWithLoading(
+                () => _borrowService.rejectReturn(
+                  transaction.id,
+                  rejectionReason: notesController.text.trim().isEmpty
+                      ? 'Damage assessment required.'
+                      : notesController.text.trim(),
+                  requiredReturnType:
+                      ReturnType.correctiveReturnTypeOptions.first,
+                ),
+              );
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reject Return'),
+          ),
+        ],
+      ),
+    ).whenComplete(notesController.dispose);
+  }
+
+  Future<void> _openAddResource() async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddEditResourceScreen()),
+    );
+    if (saved == true && mounted) {
+      _showSnackBar('Resource saved successfully.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
+      children: [
+        StreamBuilder<DashboardMetrics>(
+          stream: _dashboardService.watchMetrics(),
+          builder: (context, snapshot) {
+            return _PageHeader(
+              subtitle: DashboardService.summarySubtitle(),
+              isExporting: _isExporting,
+              onExport: snapshot.hasData ? _exportReport : null,
+            );
+          },
+        ),
+        const SizedBox(height: 22),
+        _SummaryGrid(dashboardService: _dashboardService),
+        const SizedBox(height: 18),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 760) {
+              return Column(
+                children: [
+                  _RecentBorrowedInventory(dashboardService: _dashboardService),
+                  const SizedBox(height: 16),
+                  _BorrowingInsights(dashboardService: _dashboardService),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _RecentBorrowedInventory(
+                    dashboardService: _dashboardService,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: _BorrowingInsights(
+                    dashboardService: _dashboardService,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 760) {
+              return Column(
+                children: [
+                  _RecentReturnVerification(
+                    dashboardService: _dashboardService,
+                    onVerifyReturn: _verifyReturn,
+                    onAssessDamage: _assessDamage,
+                  ),
+                  const SizedBox(height: 16),
+                  _CategoryAndAddResource(
+                    dashboardService: _dashboardService,
+                    onAddResource: _openAddResource,
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _RecentReturnVerification(
+                    dashboardService: _dashboardService,
+                    onVerifyReturn: _verifyReturn,
+                    onAssessDamage: _assessDamage,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: _CategoryAndAddResource(
+                    dashboardService: _dashboardService,
+                    onAddResource: _openAddResource,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _PageHeader extends StatelessWidget {
+  const _PageHeader({
+    required this.subtitle,
+    required this.onExport,
+    required this.isExporting,
+  });
+
+  final String subtitle;
+  final VoidCallback? onExport;
+  final bool isExporting;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      final heading = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Dashboard Overview',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            maxLines: compact ? 2 : null,
+            overflow: compact ? TextOverflow.ellipsis : null,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+      final exportButton = FilledButton.icon(
+        onPressed: isExporting ? null : onExport,
+        icon: isExporting
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.file_download_outlined),
+        label: Text(isExporting ? 'Preparing...' : 'Export PDF'),
+      );
+
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [heading, const SizedBox(height: 12), exportButton],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: heading),
+          const SizedBox(width: 12),
+          exportButton,
+        ],
+      );
+    },
+  );
+}
+
+class _SummaryGrid extends StatelessWidget {
+  const _SummaryGrid({required this.dashboardService});
+
+  final DashboardService dashboardService;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DashboardMetrics>(
+      stream: dashboardService.watchMetrics(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _StreamError(message: snapshot.error.toString());
+        }
+
+        final metrics = snapshot.data ?? DashboardMetrics.empty;
+        final loading =
+            snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 1000
+                ? 5
+                : (constraints.maxWidth >= 600 ? 3 : 2);
+            final isCompact = constraints.maxWidth < 760;
+            return GridView.count(
+              crossAxisCount: columns,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: columns == 5 ? 1.4 : (isCompact ? 1.15 : 1.45),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _SummaryCard(
+                  'Total Resources',
+                  loading
+                      ? 'â€”'
+                      : DashboardService.formatCount(metrics.totalResources),
+                  Icons.inventory_2_outlined,
+                  primary: true,
+                ),
+                _SummaryCard(
+                  'Available Stock',
+                  loading
+                      ? 'â€”'
+                      : DashboardService.formatCount(metrics.available),
+                  Icons.check_circle_outline,
+                ),
+                _SummaryCard(
+                  'Borrowed Inventory',
+                  loading
+                      ? 'â€”'
+                      : DashboardService.formatCount(metrics.borrowed),
+                  Icons.book_outlined,
+                ),
+                _SummaryCard(
+                  'Pending Returns',
+                  loading
+                      ? 'â€”'
+                      : DashboardService.formatCount(metrics.pendingReturns),
+                  Icons.assignment_return_outlined,
+                ),
+                _SummaryCard(
+                  'Overdue Items',
+                  loading
+                      ? 'â€”'
+                      : DashboardService.formatCount(metrics.overdue),
+                  Icons.warning_amber_outlined,
+                  accentColor: metrics.overdue > 0 ? Colors.red : null,
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard(
+    this.label,
+    this.value,
+    this.icon, {
+    this.primary = false,
+    this.accentColor,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool primary;
+  final Color? accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final displayIconColor =
+        accentColor ?? (primary ? colors.onPrimary : colors.primary);
+
+    return Card(
+      color: primary ? colors.primary : colors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: displayIconColor),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: primary
+                    ? colors.onPrimary
+                    : (accentColor ?? colors.onSurface),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: primary ? colors.onPrimary : colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  const _Panel({
+    required this.title,
+    required this.child,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final Widget child;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (actionLabel != null)
+                TextButton(onPressed: onAction, child: Text(actionLabel!)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    ),
+  );
+}
+
+class _RecentBorrowedInventory extends StatelessWidget {
+  const _RecentBorrowedInventory({required this.dashboardService});
+
+  final DashboardService dashboardService;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<BorrowTransaction>>(
+      stream: dashboardService.watchRecentBorrowedInventory(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _Panel(
+            title: 'Recent Borrowed Items',
+            child: _StreamError(message: snapshot.error.toString()),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const _Panel(
+            title: 'Recent Borrowed Items',
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final items = snapshot.data ?? const [];
+        return _Panel(
+          title: 'Recent Borrowed Items',
+          actionLabel: 'View All',
+          onAction: () =>
+              Navigator.pushNamed(context, '/custodian-borrow-requests'),
+          child: items.isEmpty
+              ? const _EmptyPanelMessage('No active borrowed items.')
+              : Column(
+                  children: [
+                    for (var index = 0; index < items.length; index++) ...[
+                      if (index > 0) const Divider(height: 22),
+                      _BorrowedInventoryRow(transaction: items[index]),
+                    ],
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _BorrowedInventoryRow extends StatelessWidget {
+  const _BorrowedInventoryRow({required this.transaction});
+
+  final BorrowTransaction transaction;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 600;
+      final borrower = Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            child: Text(
+              DashboardService.initialsFromName(transaction.userName),
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  transaction.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  transaction.userRole == 'teacher' ? 'Teacher' : 'Student',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+      final details = Row(
+        children: [
+          Expanded(
+            child: Text(
+              transaction.resourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            DashboardService.formatDisplayDate(transaction.borrowDate),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(width: 8),
+          BorrowStatusBadge(transaction: transaction, compact: true),
+        ],
+      );
+
+      return InkWell(
+        onTap: () => BorrowTransactionDetailsModal.show(
+          context,
+          transaction: transaction,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [borrower, const SizedBox(height: 8), details],
+                )
+              : Row(
+                  children: [
+                    Expanded(flex: 2, child: borrower),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 3, child: details),
+                  ],
+                ),
+        ),
+      );
+    },
+  );
+}
+
+class _BorrowingInsights extends StatelessWidget {
+  const _BorrowingInsights({required this.dashboardService});
+
+  final DashboardService dashboardService;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<CategoryStat>>(
+      stream: dashboardService.watchCategoryBreakdown(),
+      builder: (context, categorySnapshot) {
+        return StreamBuilder<List<int>>(
+          stream: dashboardService.watchMonthlyBorrowCounts(),
+          builder: (context, monthlySnapshot) {
+            if (categorySnapshot.hasError || monthlySnapshot.hasError) {
+              return _Panel(
+                title: 'Monthly Borrowing Stats',
+                child: _StreamError(
+                  message: (categorySnapshot.error ?? monthlySnapshot.error)
+                      .toString(),
+                ),
+              );
+            }
+
+            final loading =
+                (categorySnapshot.connectionState == ConnectionState.waiting &&
+                    !categorySnapshot.hasData) ||
+                (monthlySnapshot.connectionState == ConnectionState.waiting &&
+                    !monthlySnapshot.hasData);
+
+            if (loading) {
+              return const _Panel(
+                title: 'Monthly Borrowing Stats',
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final categories = categorySnapshot.data ?? const <CategoryStat>[];
+            final monthlyCounts = monthlySnapshot.data ?? const <int>[];
+
+            return _Panel(
+              title: 'Monthly Borrowing Stats',
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 120,
+                    child: _MiniBars(counts: monthlyCounts),
+                  ),
+                  const SizedBox(height: 14),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Most Borrowed Categories',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (categories.every((item) => item.count == 0))
+                    const _EmptyPanelMessage(
+                      'No borrow history yet for category breakdown.',
+                    )
+                  else
+                    for (final category in categories)
+                      _ProgressLine(
+                        category.label,
+                        category.percentageLabel,
+                        category.percentage,
+                      ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _MiniBars extends StatelessWidget {
+  const _MiniBars({required this.counts});
+
+  final List<int> counts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (counts.isEmpty) {
+      return const Center(child: Text('No monthly data yet.'));
+    }
+
+    final maxCount = counts.reduce((a, b) => a > b ? a : b);
+    const maxHeight = 102.0;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        for (final count in counts)
+          _Bar(maxCount == 0 ? 8 : (count / maxCount) * maxHeight),
+      ],
+    );
+  }
+}
+
+class _Bar extends StatelessWidget {
+  const _Bar(this.height);
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 28,
+    height: height.clamp(8, 102),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+    ),
+  );
+}
+
+class _ProgressLine extends StatelessWidget {
+  const _ProgressLine(this.label, this.value, this.progress);
+
+  final String label;
+  final String value;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(label)),
+            Text(value),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(value: progress, minHeight: 6),
+      ],
+    ),
+  );
+}
+
+class _RecentReturnVerification extends StatelessWidget {
+  const _RecentReturnVerification({
+    required this.dashboardService,
+    required this.onVerifyReturn,
+    required this.onAssessDamage,
+  });
+
+  final DashboardService dashboardService;
+  final void Function(BorrowTransaction transaction, {String? section})
+  onVerifyReturn;
+  final ValueChanged<BorrowTransaction> onAssessDamage;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, String>>(
+      stream: dashboardService.watchUserSections(),
+      builder: (context, sectionSnapshot) {
+        final sections = sectionSnapshot.data ?? const {};
+
+        return StreamBuilder<List<BorrowTransaction>>(
+          stream: dashboardService.watchRecentPendingReturns(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _Panel(
+                title: 'Recent Return Verification',
+                child: _StreamError(message: snapshot.error.toString()),
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const _Panel(
+                title: 'Recent Return Verification',
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final returns = snapshot.data ?? const [];
+            return _Panel(
+              title: 'Recent Return Verification',
+              actionLabel: 'View All',
+              onAction: () => Navigator.pushNamed(
+                context,
+                '/custodian-return-verification',
+              ),
+              child: returns.isEmpty
+                  ? const _EmptyPanelMessage(
+                      'No returns awaiting verification.',
+                    )
+                  : Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < returns.length;
+                          index++
+                        ) ...[
+                          if (index > 0) const SizedBox(height: 10),
+                          _ReturnRow(
+                            transaction: returns[index],
+                            section: sections[returns[index].userId],
+                            onVerifyReturn: () => onVerifyReturn(
+                              returns[index],
+                              section: sections[returns[index].userId],
+                            ),
+                            onAssessDamage: () =>
+                                onAssessDamage(returns[index]),
+                          ),
+                        ],
+                      ],
+                    ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ReturnRow extends StatelessWidget {
+  const _ReturnRow({
+    required this.transaction,
+    required this.section,
+    required this.onVerifyReturn,
+    required this.onAssessDamage,
+  });
+
+  final BorrowTransaction transaction;
+  final String? section;
+  final VoidCallback onVerifyReturn;
+  final VoidCallback onAssessDamage;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final overdue = isReturnOverdue(transaction);
+      final conditionNotes = DashboardService.conditionNotes(transaction);
+      final compact = constraints.maxWidth < 520;
+      final actions = Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FilledButton.tonal(
+            onPressed: onVerifyReturn,
+            child: Text(compact ? 'Verify' : 'Verify Return'),
+          ),
+          TextButton(
+            onPressed: onAssessDamage,
+            child: Text(compact ? 'Assess' : 'Assess Damage'),
+          ),
+        ],
+      );
+
+      final content = Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              transaction.resourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              DashboardService.borrowerSubtitle(transaction, section: section),
+              maxLines: compact ? 2 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ReturnTypeBadge(
+                  returnType: transaction.returnType,
+                  compact: true,
+                ),
+                if (overdue)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Overdue',
+                      style: TextStyle(
+                        color: Colors.red.shade800,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Condition: $conditionNotes',
+              maxLines: compact ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onVerifyReturn,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.assignment_return_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          content,
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Align(alignment: Alignment.centerRight, child: actions),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.assignment_return_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      content,
+                      const SizedBox(width: 8),
+                      actions,
+                    ],
+                  ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _CategoryAndAddResource extends StatelessWidget {
+  const _CategoryAndAddResource({
+    required this.dashboardService,
+    required this.onAddResource,
+  });
+
+  final DashboardService dashboardService;
+  final VoidCallback onAddResource;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        StreamBuilder<List<CategoryStat>>(
+          stream: dashboardService.watchCategoryBreakdown(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _Panel(
+                title: 'Most Borrowed Categories',
+                child: _StreamError(message: snapshot.error.toString()),
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const _Panel(
+                title: 'Most Borrowed Categories',
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final categories = snapshot.data ?? const <CategoryStat>[];
+            return _Panel(
+              title: 'Most Borrowed Categories',
+              child: categories.every((item) => item.count == 0)
+                  ? const _EmptyPanelMessage('No borrow history yet.')
+                  : Column(
+                      children: [
+                        for (final category in categories)
+                          _ProgressLine(
+                            category.label,
+                            category.percentageLabel,
+                            category.percentage,
+                          ),
+                      ],
+                    ),
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+        Card(
+          color: Theme.of(context).colorScheme.primary,
+          child: InkWell(
+            onTap: onAddResource,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.add_circle_outline,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    size: 34,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Add New Resource',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Register a new item to the inventory',
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimary.withValues(alpha: 0.82),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyPanelMessage extends StatelessWidget {
+  const _EmptyPanelMessage(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Text(
+        message,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+class _StreamError extends StatelessWidget {
+  const _StreamError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Text(
+        message,
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      ),
+    );
+  }
+}

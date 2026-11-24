@@ -98,8 +98,7 @@ class _QrReturnResponseSheet extends StatelessWidget {
               _SummaryRow(
                 icon: Icons.person_outline,
                 label: 'Borrower',
-                value:
-                    '${transaction.userName} (${transaction.userRole})',
+                value: '${transaction.userName} (${transaction.userRole})',
               ),
               _SummaryRow(
                 icon: Icons.notes_outlined,

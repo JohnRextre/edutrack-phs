@@ -483,7 +483,7 @@ class _BorrowItemScreenState extends State<BorrowItemScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(
-                                  'Section limit: ${_selectedSection!.maxActiveBorrowQuantity} active item(s) • '
+                                  'Section limit: ${_selectedSection!.maxActiveBorrowQuantity} active item(s) â€¢ '
                                   'Remaining: $_sectionRemaining',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),

@@ -171,7 +171,7 @@ class _ReturnItemScreenState extends State<ReturnItemScreen> {
                       decoration: InputDecoration(
                         labelText: 'Quantity to Return *',
                         helperText:
-                            'Borrowed: ${transaction.requestedQuantity} • Remaining after this return: $_remainingAfterReturn',
+                            'Borrowed: ${transaction.requestedQuantity} â€¢ Remaining after this return: $_remainingAfterReturn',
                         border: const OutlineInputBorder(),
                       ),
                       child: _isTeacher
